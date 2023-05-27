@@ -2,11 +2,11 @@ import matplotlib.pyplot as plt
 import os
 from cul_funs import *
 
-# data = pd.read_csv('/Users/lvfreud/Desktop/中信建投/因子/data/tick.csv', low_memory=False)
-working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
+# data = pd.read_csv('E:\\data\\tick.csv', low_memory=False)
+working_path = 'E:\\data\\tick'
 files_name = []
 data = []
-glob_f = 'pob'
+glob_f = ['voi', 'rwr', 'peaks', 'vc', 'skew', 'kurt', 'disaster', 'pearson', 'mpb', 'pob']
 for root, dirs, files in os.walk(working_path):
     for fi in files:
         path = os.path.join(root, fi)
@@ -30,7 +30,8 @@ def tick_handle(tick, window_size):
     tick.sort_values(group_index, inplace=True)
 
     rolling_data = []
-    for _, groups in tick.groupby('securityid'):
+    for _, g in tick.groupby('securityid'):
+        groups = g.copy()
         groups['price_mean'] = ta.MA(groups.price, 20)  # 1分钟均价
         groups['price_mean5'] = ta.MA(groups.price, window_size)  # 5分钟均价
         groups['r_mean5'] = np.log(groups['price'] / groups['price_mean5'])
@@ -42,33 +43,33 @@ def tick_handle(tick, window_size):
         groups['r_5'] = ta.ROC(groups.price_mean, window_size)
 
         """收益波动比"""
-        # groups['open5'] = groups['price'].shift(window_size - 1)
-        # groups['high5'] = ta.MAX(groups.high, window_size)
-        # groups['low5'] = ta.MIN(groups.low, window_size)
-        # groups['rwr'] = (groups['price'] - groups['open5'])/(groups['high5']-groups['low5'])
+        groups['open5'] = groups['price'].shift(window_size - 1)
+        groups['high5'] = ta.MAX(groups.high, window_size)
+        groups['low5'] = ta.MIN(groups.low, window_size)
+        groups['rwr'] = (groups['price'] - groups['open5'])/(groups['high5']-groups['low5'])
 
         """波峰因子"""
-        # groups['peaks'] = peak(groups, 20)
+        groups['peaks'] = peak(groups, 20)
 
         """量价相关因子"""
-        # groups['vc'] = cor_vc(groups, window_size)
+        groups['vc'] = cor_vc(groups, window_size)
 
         """买卖压力失衡因子"""
-        # groups['voi'] = voi(groups)
+        groups['voi'] = voi(groups)
 
         """峰度 偏度因子"""
-        # groups['skew'] = cul_skew(groups['r_minute'], window_size)
-        # groups['kurt'] = calculate_kurtosis(groups['r_minute'], 20)
+        groups['skew'] = cul_skew(groups['r_minute'], window_size)
+        groups['kurt'] = calculate_kurtosis(groups['r_minute'], 20)
 
         """最优波动率"""
-        # groups['desaster'] = desaster(groups, window_size)
+        groups['disaster'] = disaster(groups, window_size)
 
         """量价相关pearson"""
-        # groups['total_value_trade_ms'] = ta.SUM(groups['total_value_trade'], 20)
-        # groups['pearson'] = ta.CORREL(groups['total_value_trade_ms'], groups['price_mean'], window_size)
+        groups['total_value_trade_ms'] = ta.SUM(groups['total_value_trade'], 20)
+        groups['pearson'] = ta.CORREL(groups['total_value_trade_ms'], groups['price_mean'], window_size)
 
         """市场偏离度"""
-        # groups['mpb'] = mpb(groups)
+        groups['mpb'] = mpb(groups)
 
         """积极买入"""
         groups['pob'] = positive_ratio(groups, window_size)
@@ -76,7 +77,7 @@ def tick_handle(tick, window_size):
         rolling_data.append(groups)
     del tick
     rolling_data = pd.concat(rolling_data)
-    rolling_data = pd.concat([rolling_data, fac_neutral(rolling_data, [glob_f])], axis=1)
+    rolling_data = pd.concat([rolling_data, fac_neutral(rolling_data, glob_f)], axis=1)
     return rolling_data
 
 
@@ -84,7 +85,8 @@ ws = 4*20  # 经过验证3（或4）分钟的IR、IC最大
 data_minute = tick_handle(data, ws)
 del data
 data_minute.sort_values(['securityid', 'date', 'time'], inplace=True)
-factors = [i + '_neutral' for i in glob_f]
+factors = glob_f
+factors = [i + '_neutral' for i in factors]
 
 # 计算IC/RankIC值
 factor_ic = []
@@ -115,33 +117,35 @@ del factor_ir
 
 # 分组回测
 k = 10
-sto = []
-for (da, mi), group in data_minute.groupby(['date', 'minutes']):
-    stk = group.groupby('securityid')[glob_f].mean().reset_index()
-    stk['date'] = da
-    stk['minutes'] = mi
-    pre = group.drop_duplicates(subset='securityid', keep='last')[['securityid', 'date', 'minutes', 'r_real_pre']]
-    stk = stk.merge(pre, on=['securityid', 'date', 'minutes'], how='left').sort_values(glob_f, ascending=False)
-    group_size = len(stk) // k
-    remainder = len(stk) % k
-    # noinspection PyRedeclaration
-    start_index = 0
-    stocks = pd.DataFrame()
-    for i in range(k):
-        if i < remainder:
-            end_index = start_index + group_size + 1
-        else:
-            end_index = start_index + group_size
+for kk in glob_f:
+    sto = []
+    for (da, mi), group in data_minute.groupby(['date', 'minutes']):
+        stk = group.groupby('securityid')[kk].mean().reset_index()
+        stk['date'] = da
+        stk['minutes'] = mi
+        pre = group.drop_duplicates(subset='securityid', keep='last')[['securityid', 'date', 'minutes', 'r_real_pre']]
+        stk = stk.merge(pre, on=['securityid', 'date', 'minutes'], how='left').sort_values(kk, ascending=False)
+        group_size = len(stk) // k
+        remainder = len(stk) % k
+        # noinspection PyRedeclaration
+        start_index = 0
+        stocks = pd.DataFrame()
+        for i in range(k):
+            if i < remainder:
+                end_index = start_index + group_size + 1
+            else:
+                end_index = start_index + group_size
 
-        stocks['r_pre'+str(i)] = stk[start_index:end_index]['r_real_pre'].reset_index(drop=True)
-        start_index = end_index
-    stocks['date'] = da
-    stocks['minutes'] = mi
-    sto.append(stocks)
-sto = pd.concat(sto).set_index(['date', 'minutes'])
+            stocks['r_pre'+str(i)] = stk[start_index:end_index]['r_real_pre'].reset_index(drop=True)
+            start_index = end_index
+        stocks['date'] = da
+        stocks['minutes'] = mi
+        sto.append(stocks)
+    sto = pd.concat(sto).set_index(['date', 'minutes'])
+    print(kk)
+    print(sto.sum()/len(data_IC['date'].drop_duplicates()))
 
 # 输出绘图
-print(sto.sum()/len(data_IC['date'].drop_duplicates()))
 print(data_IC[rank_ic+rank_ir].mean())
 # sto.cumsum().plot().set_xticks([])
 # plt.show()

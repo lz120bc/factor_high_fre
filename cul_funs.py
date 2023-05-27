@@ -1,6 +1,9 @@
 import talib as ta
 import numpy as np
 import pandas as pd
+import threading
+
+lock = threading.Lock()
 
 
 def cul_skew(returns, window_size):
@@ -38,12 +41,60 @@ def fac_neutral(rolling_data, factor_origin):
     """中性化"""
     rolling_residuals = []
     fac_name = [i + '_neutral' for i in factor_origin]
-    for (_, _), groups in rolling_data.groupby(['date', 'time']):
+    for (_, _), g in rolling_data.groupby(['date', 'time']):
+        groups = g['date', 'time'].copy()
         x = groups[['r_minute', 'r_5', 'r_mean5']].values
         for i in factor_origin:
             groups[i+'_neutral'] = calculate_residuals(x, groups[i].values)
         rolling_residuals.append(groups[fac_name])
     rolling_residuals = pd.concat(rolling_residuals)
+    rolling_residuals.fillna(0, inplace=True)
+    return rolling_residuals
+
+
+def cul_res(rolling_data, factor_origin, neu):
+    fac_name = [i + '_neutral' for i in factor_origin]
+    for (_, _), g in rolling_data.groupby(['date', 'time']):
+        groups = pd.DataFrame(columns=fac_name, index=g.index)
+        x = g[['r_minute', 'r_5', 'r_mean5']].values
+        for i in factor_origin:
+            groups[i + '_neutral'] = calculate_residuals(x, g[i].values)
+        lock.acquire()
+        neu.append(groups)
+        lock.release()
+    return
+
+
+def fac_neutral2(rolling_data: pd.DataFrame, factor_origin):
+    """中性化"""
+    threads = []
+    neu = []
+    k = 32
+    rolling_data.sort_values(['date', 'time'], inplace=True)
+    stk = rolling_data[['date', 'time']].drop_duplicates(keep='first')
+    l = len(stk)
+    group_size = l // k
+    remainder = l % k
+    start_index = 0
+    for i in range(k):
+        if i >= l:
+            break
+        if i < remainder:
+            end_index = start_index + group_size + 1
+        else:
+            end_index = start_index + group_size
+        if end_index == l:
+            g = rolling_data.loc[stk.index[start_index]:]
+        else:
+            g = rolling_data.loc[stk.index[start_index]:stk.index[end_index]].drop(stk.index[end_index])
+        tick_thread = threading.Thread(target=cul_res, args=(g, factor_origin, neu))
+        tick_thread.start()
+        threads.append(tick_thread)
+        start_index = end_index
+
+    for thread in threads:
+        thread.join()
+    rolling_residuals = pd.concat(neu)
     rolling_residuals.fillna(0, inplace=True)
     return rolling_residuals
 
@@ -87,11 +138,11 @@ def cor_vc(data_dic: pd.DataFrame, window_size):
     return vc
 
 
-def desaster(minute_data: pd.DataFrame, window_size):
+def disaster(minute_data: pd.DataFrame, window_size):
     """最优波动率"""
     results = []
     for i in range(window_size, len(minute_data)):
-        window_data = minute_data.iloc[i - window_size:i][['open', 'last', 'high', 'low']].values.flatten()
+        window_data = minute_data.iloc[i - window_size:i][['price', 'last', 'high', 'low']].values.flatten()
         ratio_squared = (window_data.std() / window_data.mean()) ** 2
         results.append(ratio_squared)
     ratio = np.array([np.nan] * window_size + results)
