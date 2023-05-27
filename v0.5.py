@@ -13,7 +13,8 @@ col = ['securityid', 'date', 'time', 'high', 'low', 'last', 'total_value_trade',
 lock = threading.Lock()
 
 # data = pd.read_csv('E:\\data\\tick.csv', low_memory=False)
-working_path = 'E:\\data\\tick'
+# working_path = 'E:\\data\\tick'
+working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
 files_name = []
 data = []
 for root, dirs, files in os.walk(working_path):
@@ -91,20 +92,20 @@ def tick_handle(tick, window_size):
 
     tick_threads = []
     r_data = []
-    k = 32
+    k = 1
     stk = tick['securityid'].drop_duplicates(keep='first')
-    l = len(stk)
-    group_size = l // k
-    remainder = l % k
+    len_sto = len(stk)
+    group_size = len_sto // k
+    remainder = len_sto % k
     start_index = 0
     for i in range(k):
-        if i >= l:
+        if i >= len_sto:
             break
         if i < remainder:
             end_index = start_index + group_size + 1
         else:
             end_index = start_index + group_size
-        if end_index == l:
+        if end_index == len_sto:
             g = tick.loc[stk.index[start_index]:]
         else:
             g = tick.loc[stk.index[start_index]:stk.index[end_index]].drop(stk.index[end_index])
@@ -119,7 +120,7 @@ def tick_handle(tick, window_size):
     del tick
     rolling_data = pd.concat(r_data)
     del r_data
-    # rolling_data = pd.concat([rolling_data, fac_neutral(rolling_data, glob_f)], axis=1)
+    rolling_data = pd.concat([rolling_data, fac_neutral(rolling_data, glob_f)], axis=1)
     return rolling_data
 
 
@@ -129,25 +130,25 @@ def ic_task(rd, date, tis):
     ics = pd.concat([fac, ric])
     ics['date'] = date
     ics['time'] = tis
-    lock.acquire()
+    # lock.acquire()
     factor_ic.append(ics)
-    lock.release()
+    # lock.release()
 
 
 ws = 4*20  # 经过验证3（或4）分钟的IR、IC最大
 start_time = time.process_time()
 data_minute = tick_handle(data, ws)
-end_time = time.process_time()
-print(end_time - start_time)
 del data
-# data_minute.sort_values(['securityid', 'date', 'time'], inplace=True)
+data_minute.sort_values(['securityid', 'date', 'time'], inplace=True)
 factors = glob_f
-# factors = [i + '_neutral' for i in factors]
+factors = [i + '_neutral' for i in factors]
 
 # 计算IC/RankIC值
-# threads = []
-# ic = [i + '_ic' for i in factors]
-# rank_ic = [i + '_rank_ic' for i in factors]
+threads = []
+ic = [i + '_ic' for i in factors]
+rank_ic = [i + '_rank_ic' for i in factors]
+for (da, ti), group in data_minute.groupby(['date', 'time']):
+    ic_task(group, da, ti)
 # for (da, ti), group in data_minute.groupby(['date', 'time']):
 #     thread = threading.Thread(target=ic_task, args=(group, da, ti))
 #     thread.start()
@@ -156,13 +157,27 @@ factors = glob_f
 # for thread in threads:
 #     thread.join()
 
-# data_IC = pd.concat(factor_ic, axis=1).transpose()
-# data_IC.columns = ic + rank_ic + ['date', 'time']
-# data_IC = data_IC.sort_values(['date', 'time'])
-# del factor_ic
-#
-# print(data_IC[rank_ic].mean())
+data_IC = pd.concat(factor_ic, axis=1).transpose()
+data_IC.columns = ic + rank_ic + ['date', 'time']
+data_IC = data_IC.sort_values(['date', 'time'])
+del factor_ic
+
+# 计算ICIR/RankICIR值
+factor_ir = []
+ir = [i + '_ir' for i in factors]
+rank_ir = [i + '_rank_ir' for i in factors]
+for _, group in data_IC.groupby('date'):
+    group[ir] = group.rolling(window=ws)[ic].apply(lambda x: x.mean() / x.std())
+    group[rank_ir] = group.rolling(window=ws)[rank_ic].apply(lambda x: x.mean() / x.std() if x.std() != 0 else 10)
+    factor_ir.append(group)
+data_IC = pd.concat(factor_ir)
+del factor_ir
+
+
+print(data_IC[rank_ic].mean())
 # sto.cumsum().plot().set_xticks([])
 # plt.show()
 # data_IC.groupby('time')[ic].mean().plot.bar().set_xticks([])
 # plt.show()
+end_time = time.process_time()
+print(end_time - start_time)

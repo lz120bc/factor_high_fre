@@ -42,11 +42,11 @@ def fac_neutral(rolling_data, factor_origin):
     rolling_residuals = []
     fac_name = [i + '_neutral' for i in factor_origin]
     for (_, _), g in rolling_data.groupby(['date', 'time']):
-        groups = g['date', 'time'].copy()
-        x = groups[['r_minute', 'r_5', 'r_mean5']].values
+        groups = pd.DataFrame(columns=fac_name, index=g.index)
+        x = g[['r_minute', 'r_5', 'r_mean5']].values
         for i in factor_origin:
-            groups[i+'_neutral'] = calculate_residuals(x, groups[i].values)
-        rolling_residuals.append(groups[fac_name])
+            groups[i+'_neutral'] = calculate_residuals(x, g[i].values)
+        rolling_residuals.append(groups)
     rolling_residuals = pd.concat(rolling_residuals)
     rolling_residuals.fillna(0, inplace=True)
     return rolling_residuals
@@ -72,18 +72,18 @@ def fac_neutral2(rolling_data: pd.DataFrame, factor_origin):
     k = 32
     rolling_data.sort_values(['date', 'time'], inplace=True)
     stk = rolling_data[['date', 'time']].drop_duplicates(keep='first')
-    l = len(stk)
-    group_size = l // k
-    remainder = l % k
+    dt_len = len(stk)
+    group_size = dt_len // k
+    remainder = dt_len % k
     start_index = 0
     for i in range(k):
-        if i >= l:
+        if i >= dt_len:
             break
         if i < remainder:
             end_index = start_index + group_size + 1
         else:
             end_index = start_index + group_size
-        if end_index == l:
+        if end_index == dt_len:
             g = rolling_data.loc[stk.index[start_index]:]
         else:
             g = rolling_data.loc[stk.index[start_index]:stk.index[end_index]].drop(stk.index[end_index])
