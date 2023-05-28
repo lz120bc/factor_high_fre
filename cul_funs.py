@@ -8,17 +8,19 @@ lock = threading.Lock()
 
 def cul_skew(returns, window_size):
     """偏度计算"""
-    sma = ta.SMA(returns, window_size)
-    stddev = ta.STDDEV(returns, window_size)
-    skew = ta.SMA((returns - sma) / stddev, window_size)
+    stddev = ta.STDDEV(returns['r_minute'], window_size)
+    skew = (returns['r_minute'] - returns['r_mean5']) / stddev
+    skew[skew.isna()] = 0
+    skew[skew == np.inf] = 0
+    skew = ta.SMA(skew, window_size)
     return skew
 
 
 def calculate_kurtosis(returns, window_size):
     """峰度计算"""
-    std = ta.STDDEV(returns, window_size)
-    skew = ta.SMA(returns, window_size)
-    kurt = (std ** 4) / (skew ** 2)
+    sma = ta.SMA(returns, window_size)
+    stddev = ta.STDDEV(returns, window_size)
+    kurt = ta.MA((returns - sma) ** 4, window_size)/(stddev**4)
     return kurt
 
 
@@ -42,11 +44,12 @@ def fac_neutral(rolling_data, factor_origin):
     rolling_residuals = []
     fac_name = [i + '_neutral' for i in factor_origin]
     for (_, _), g in rolling_data.groupby(['date', 'time']):
-        groups = pd.DataFrame(columns=fac_name, index=g.index)
+        neu = []
         x = g[['r_minute', 'r_5', 'r_mean5']].values
         for i in factor_origin:
-            groups[i+'_neutral'] = calculate_residuals(x, g[i].values)
-        rolling_residuals.append(groups)
+            neu.append(calculate_residuals(x, g[i].values))
+        neu = pd.DataFrame(neu, columns=g.index, index=fac_name)
+        rolling_residuals.append(neu.T)
     rolling_residuals = pd.concat(rolling_residuals)
     rolling_residuals.fillna(0, inplace=True)
     return rolling_residuals
@@ -69,7 +72,7 @@ def fac_neutral2(rolling_data: pd.DataFrame, factor_origin):
     """中性化"""
     threads = []
     neu = []
-    k = 32
+    k = 1
     rolling_data.sort_values(['date', 'time'], inplace=True)
     stk = rolling_data[['date', 'time']].drop_duplicates(keep='first')
     dt_len = len(stk)
@@ -129,12 +132,13 @@ def peak(data_dic: pd.DataFrame, window_size: int):
 
 def cor_vc(data_dic: pd.DataFrame, window_size):
     """量价相关因子"""
-    minute_trade = ta.SUM(data_dic.total_volume_trade, window_size)  # 分钟交易量
-    dav = (data_dic['last'] - data_dic['r_minute'])*minute_trade
-    vol_std = ta.STDDEV(data_dic.total_volume_trade, window_size)
-    last_std = ta.STDDEV(data_dic['last'], window_size)
+    minute_trade = ta.SUM(data_dic.total_volume_trade, 20)  # 分钟交易量
+    dav = (data_dic['price_mean'] - data_dic['price_mean5'])*minute_trade
+    vol_std = ta.STDDEV(data_dic.total_volume_trade, 20)
+    last_std = ta.STDDEV(data_dic['last'], 20)
     vc = ta.SUM(dav, window_size)/(vol_std*last_std)
-    vc.loc[vc == np.inf] = np.nan
+    vc[vc == np.inf] = np.nan
+    vc[vc == 0] = np.nan
     return vc
 
 
@@ -146,6 +150,7 @@ def disaster(minute_data: pd.DataFrame, window_size):
         ratio_squared = (window_data.std() / window_data.mean()) ** 2
         results.append(ratio_squared)
     ratio = np.array([np.nan] * window_size + results)
+    ratio = np.where(ratio == 0, np.nan, ratio)
     ratio = minute_data['r_minute'].values/ratio
     return ratio
 
@@ -159,7 +164,8 @@ def mpb(data_dic):
     tp[np.isinf(tp)] = np.nan
     tp.fillna(method='ffill', inplace=True)
     mid = data_dic['price']
-    tick_fac_data = tp - (mid + mid.shift(ticks_num)) / 1000 / 2
+    tick_fac_data = tp - (mid + mid.shift(ticks_num)) / 10000 / 2
+    tick_fac_data = ta.SUM(tick_fac_data, 80)
     return tick_fac_data
 
 

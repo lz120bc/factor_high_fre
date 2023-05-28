@@ -3,10 +3,12 @@ import os
 from cul_funs import *
 
 # data = pd.read_csv('E:\\data\\tick.csv', low_memory=False)
-working_path = 'E:\\data\\tick'
+# working_path = 'E:\\data\\tick'
+working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
 files_name = []
 data = []
-glob_f = ['voi', 'rwr', 'peaks', 'vc', 'skew', 'kurt', 'disaster', 'pearson', 'mpb', 'pob']
+# glob_f = ['voi', 'rwr', 'peaks', 'vc', 'skew', 'kurt', 'disaster', 'pearson', 'mpb', 'pob']
+glob_f = ['rwr', 'pearson']
 for root, dirs, files in os.walk(working_path):
     for fi in files:
         path = os.path.join(root, fi)
@@ -49,30 +51,30 @@ def tick_handle(tick, window_size):
         groups['rwr'] = (groups['price'] - groups['open5'])/(groups['high5']-groups['low5'])
 
         """波峰因子"""
-        groups['peaks'] = peak(groups, 20)
+        # groups['peaks'] = peak(groups, 20)
 
         """量价相关因子"""
-        groups['vc'] = cor_vc(groups, window_size)
+        # groups['vc'] = cor_vc(groups, window_size)
 
         """买卖压力失衡因子"""
-        groups['voi'] = voi(groups)
+        # groups['voi'] = voi(groups)
 
         """峰度 偏度因子"""
-        groups['skew'] = cul_skew(groups['r_minute'], window_size)
-        groups['kurt'] = calculate_kurtosis(groups['r_minute'], 20)
+        # groups['skew'] = cul_skew(groups['r_minute'], window_size)
+        # groups['kurt'] = calculate_kurtosis(groups['r_minute'], 20)
 
         """最优波动率"""
-        groups['disaster'] = disaster(groups, window_size)
+        # groups['disaster'] = disaster(groups, window_size)
 
         """量价相关pearson"""
         groups['total_value_trade_ms'] = ta.SUM(groups['total_value_trade'], 20)
         groups['pearson'] = ta.CORREL(groups['total_value_trade_ms'], groups['price_mean'], window_size)
 
         """市场偏离度"""
-        groups['mpb'] = mpb(groups)
+        # groups['mpb'] = mpb(groups)
 
         """积极买入"""
-        groups['pob'] = positive_ratio(groups, window_size)
+        # groups['pob'] = positive_ratio(groups, window_size)
 
         rolling_data.append(groups)
     del tick
@@ -117,7 +119,7 @@ del factor_ir
 
 # 分组回测
 k = 10
-for kk in glob_f:
+for kk in factors:
     sto = []
     for (da, mi), group in data_minute.groupby(['date', 'minutes']):
         stk = group.groupby('securityid')[kk].mean().reset_index()
