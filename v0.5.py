@@ -5,7 +5,7 @@ import threading
 import time
 
 # glob_f = ['voi', 'rwr', 'peaks', 'vc', 'skew', 'kurt', 'disaster', 'pearson', 'mpb', 'pob']
-glob_f = ['disaster', 'rwr']
+glob_f = ['pearson', 'voi']
 col = ['securityid', 'date', 'time', 'high', 'low', 'last', 'total_value_trade',
        'total_volume_trade', 'offer_price1', 'bid_price1', 'offer_volume1', 'bid_volume1']
 
@@ -27,6 +27,7 @@ data = pd.concat(data).reset_index(drop=True)
 
 
 def handle_task(tick: pd.DataFrame, window_size, r_data):
+    """多线程函数"""
     for _, g in tick.groupby('securityid'):
         groups = g.copy()
         groups['price_mean'] = ta.MA(groups.price, 20)  # 1分钟均价
@@ -40,10 +41,10 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         groups['r_5'] = ta.ROC(groups.price_mean, window_size)
 
         """收益波动比"""
-        groups['open5'] = groups['price'].shift(window_size - 1)
-        groups['high5'] = ta.MAX(groups.high, window_size)
-        groups['low5'] = ta.MIN(groups.low, window_size)
-        groups['rwr'] = (groups['price'] - groups['open5']) / (groups['high5'] - groups['low5'])
+        # groups['open5'] = groups['price'].shift(window_size - 1)
+        # groups['high5'] = ta.MAX(groups.high, window_size)
+        # groups['low5'] = ta.MIN(groups.low, window_size)
+        # groups['rwr'] = (groups['price'] - groups['open5']) / (groups['high5'] - groups['low5'])
 
         """波峰因子"""
         # groups['peaks'] = peak(groups, 20)
@@ -52,18 +53,18 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         # groups['vc'] = cor_vc(groups, window_size)
 
         """买卖压力失衡因子"""
-        # groups['voi'] = voi(groups)
+        groups['voi'] = voi(groups)
 
         """峰度 偏度因子"""
         # groups['skew'] = cul_skew(groups, window_size)
         # groups['kurt'] = calculate_kurtosis(groups['price'], window_size)
 
         """最优波动率"""
-        groups['disaster'] = disaster(groups, window_size)
+        # groups['disaster'] = disaster(groups, window_size)
 
         """量价相关pearson"""
-        # groups['total_value_trade_ms'] = ta.MA(groups['total_value_trade'], 20)
-        # groups['pearson'] = ta.CORREL(groups['total_value_trade_ms'], groups['price_mean'], window_size)
+        groups['total_value_trade_ms'] = ta.MA(groups['total_value_trade'], 20)
+        groups['pearson'] = ta.CORREL(groups['total_value_trade_ms'], groups['price_mean'], window_size)
 
         """市场偏离度"""
         # groups['mpb'] = mpb(groups)
@@ -116,14 +117,12 @@ def tick_handle(tick, window_size):
     for tick_thread in tick_threads:
         tick_thread.join()
 
-    del tick
-    rolling_data = pd.concat(r_data)
-    del r_data
-    rolling_data = pd.concat([rolling_data, fac_neutral(rolling_data, glob_f)], axis=1)
-    return rolling_data
+    r_data = pd.concat(r_data)
+    r_data = r_data.merge(fac_neutral(r_data, glob_f), right_index=True, left_index=True, how='left')
+    return r_data
 
 
-ws = 4*20  # 经过验证3（或4）分钟的IR、IC最大
+ws = 5*20
 start_time = time.process_time()
 data_minute = tick_handle(data, ws)
 del data
@@ -141,50 +140,20 @@ for (da, ti), group in data_minute.groupby(['date', 'time']):
     factor_ic.append([da, ti] + fac + ric)
 data_IC = pd.DataFrame(factor_ic, columns=['date', 'time'] + ic + rank_ic)
 data_IC = data_IC.sort_values(['date', 'time'])
+print(data_IC[rank_ic].mean())
 del factor_ic
 
 # 计算ICIR/RankICIR值
-factor_ir = []
-ir = [i + '_ir' for i in factors]
-rank_ir = [i + '_rank_ir' for i in factors]
-for _, group in data_IC.groupby('date'):
-    group[ir] = group.rolling(window=ws)[ic].apply(lambda x: x.mean() / x.std())
-    group[rank_ir] = group.rolling(window=ws)[rank_ic].apply(lambda x: x.mean() / x.std() if x.std() != 0 else 10)
-    factor_ir.append(group)
-data_IC = pd.concat(factor_ir)
-del factor_ir
+data_ir = data_IC[ic].mean() / data_IC[ic].std()
+data_rank_ir = data_IC[rank_ic].mean() / data_IC[rank_ic].std()
+print(data_rank_ir)
 
 # 分组回测
-k = 10
 for kk in factors:
-    sto = []
-    for (da, mi), group in data_minute.groupby(['date', 'minutes']):
-        stk = group.groupby('securityid')[kk].mean().reset_index()
-        stk['date'] = da
-        stk['minutes'] = mi
-        pre = group.drop_duplicates(subset='securityid', keep='last')[['securityid', 'date', 'minutes', 'r_real_pre']]
-        stk = stk.merge(pre, on=['securityid', 'date', 'minutes'], how='left').sort_values(kk, ascending=False)
-        group_size = len(stk) // k
-        remainder = len(stk) % k
-        # noinspection PyRedeclaration
-        start_index = 0
-        stocks = pd.DataFrame()
-        for i in range(k):
-            if i < remainder:
-                end_index = start_index + group_size + 1
-            else:
-                end_index = start_index + group_size
-
-            stocks['r_pre'+str(i)] = stk[start_index:end_index]['r_real_pre'].reset_index(drop=True)
-            start_index = end_index
-        stocks['date'] = da
-        stocks['minutes'] = mi
-        sto.append(stocks)
-    sto = pd.concat(sto).set_index(['date', 'minutes'])
+    sto = returns_stock(data_minute, kk)
     print(kk)
     print(sto.sum()/len(data_IC['date'].drop_duplicates()))
 
-print(data_IC[rank_ic + rank_ir].mean())
 # sto.cumsum().plot().set_xticks([])
 # plt.show()
 # data_IC.groupby('time')[ic].mean().plot.bar().set_xticks([])

@@ -24,7 +24,7 @@ def calculate_kurtosis(returns, window_size):
     return kurt
 
 
-def calculate_residuals(x, y):
+def calculate_residuals(x, y) -> np.array:
     """残差计算"""
     ones = np.ones((x.shape[0], 1))
     if x.ndim == 1:
@@ -39,7 +39,7 @@ def calculate_residuals(x, y):
     return res
 
 
-def fac_neutral(rolling_data, factor_origin):
+def fac_neutral(rolling_data: pd.DataFrame, factor_origin) -> pd.DataFrame:
     """中性化"""
     rolling_residuals = []
     fac_name = [i + '_neutral' for i in factor_origin]
@@ -178,3 +178,29 @@ def positive_ratio(data_dic, tick_nums):
                     ta.SUM(data_dic['total_value_trade'], tick_nums)
     return tick_fac_data
 
+
+def returns_stock(data: pd.DataFrame, factor) -> pd.DataFrame:
+    sto = []
+    k = 10
+    for (da, mi), group in data.groupby(['date', 'minutes']):
+        stk = group.groupby('securityid')[factor].mean().reset_index()
+        stk['date'] = da
+        stk['minutes'] = mi
+        pre = group.drop_duplicates(subset='securityid', keep='last')[['securityid', 'date', 'minutes', 'r_pre']]
+        stk = stk.merge(pre, on=['securityid', 'date', 'minutes'], how='left').sort_values(factor, ascending=False)
+        group_size = len(stk) // k
+        remainder = len(stk) % k
+        start_index = 0
+        stocks = pd.DataFrame()
+        for i in range(k):
+            if i < remainder:
+                end_index = start_index + group_size + 1
+            else:
+                end_index = start_index + group_size
+            stocks['r_pre'+str(i)] = stk[start_index:end_index]['r_pre'].reset_index(drop=True)
+            start_index = end_index
+        stocks['date'] = da
+        stocks['minutes'] = mi
+        sto.append(stocks)
+    sto = pd.concat(sto).set_index(['date', 'minutes'])
+    return sto
