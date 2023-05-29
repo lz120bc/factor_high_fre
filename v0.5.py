@@ -5,9 +5,15 @@ import threading
 import time
 
 # glob_f = ['voi', 'rwr', 'peaks', 'vc', 'skew', 'kurt', 'disaster', 'pearson', 'mpb', 'pob']
-glob_f = ['pearson', 'voi']
+glob_f = ['ori', 'sori', 'voi2']
+bao = []
+for i in range(1, 6):
+    bao.append('offer_price' + str(i))
+    bao.append('offer_volume' + str(i))
+    bao.append('bid_price' + str(i))
+    bao.append('bid_volume' + str(i))
 col = ['securityid', 'date', 'time', 'high', 'low', 'last', 'total_value_trade',
-       'total_volume_trade', 'offer_price1', 'bid_price1', 'offer_volume1', 'bid_volume1']
+       'total_volume_trade', 'num_trades'] + bao
 
 lock = threading.Lock()
 
@@ -53,18 +59,22 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         # groups['vc'] = cor_vc(groups, window_size)
 
         """买卖压力失衡因子"""
-        groups['voi'] = voi(groups)
+        # groups['voi'] = voi(groups)
+        groups['voi2'] = voi2(groups)
+        # groups['mofi'] = mofi(groups)
+        groups['ori'] = ori(groups)
+        groups['sori'] = sori(groups)
 
         """峰度 偏度因子"""
-        # groups['skew'] = cul_skew(groups, window_size)
-        # groups['kurt'] = calculate_kurtosis(groups['price'], window_size)
+        # groups['skew'] = cul_skew(groups['price_mean'], window_size)
+        # groups['kurt'] = calculate_kurtosis(groups['price_mean'], window_size)
 
         """最优波动率"""
         # groups['disaster'] = disaster(groups, window_size)
 
         """量价相关pearson"""
-        groups['total_value_trade_ms'] = ta.MA(groups['total_value_trade'], 20)
-        groups['pearson'] = ta.CORREL(groups['total_value_trade_ms'], groups['price_mean'], window_size)
+        # groups['total_value_trade_ms'] = ta.MA(groups['total_value_trade'], 20)
+        # groups['pearson'] = ta.CORREL(groups['total_value_trade_ms'], groups['price_mean'], window_size)
 
         """市场偏离度"""
         # groups['mpb'] = mpb(groups)
@@ -124,9 +134,8 @@ def tick_handle(tick, window_size):
 
 ws = 5*20
 start_time = time.process_time()
-data_minute = tick_handle(data, ws)
-del data
-data_minute.sort_values(['securityid', 'date', 'time'], inplace=True)
+data = tick_handle(data, ws)
+data.sort_values(['securityid', 'date', 'time'], inplace=True)
 factors = glob_f
 factors = [i + '_neutral' for i in factors]
 
@@ -134,7 +143,7 @@ factors = [i + '_neutral' for i in factors]
 factor_ic = []
 ic = [i + '_ic' for i in factors]
 rank_ic = [i + '_rank_ic' for i in factors]
-for (da, ti), group in data_minute.groupby(['date', 'time']):
+for (da, ti), group in data.groupby(['date', 'time']):
     fac = group[['r_pre']+factors].corr().iloc[0, 1:].to_list()
     ric = group[['r_pre']+factors].rank().corr().iloc[0, 1:].to_list()
     factor_ic.append([da, ti] + fac + ric)
@@ -150,7 +159,7 @@ print(data_rank_ir)
 
 # 分组回测
 for kk in factors:
-    sto = returns_stock(data_minute, kk)
+    sto = returns_stock(data, kk)
     print(kk)
     print(sto.sum()/len(data_IC['date'].drop_duplicates()))
 
