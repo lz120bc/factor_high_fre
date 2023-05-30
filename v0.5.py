@@ -1,11 +1,14 @@
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import os
+
+import pandas as pd
+
 from cul_funs import *
 import threading
 import time
 
 # glob_f = ['voi', 'rwr', 'peaks', 'vc', 'skew', 'kurt', 'disaster', 'pearson', 'mpb', 'pob']
-glob_f = ['ori', 'sori', 'voi2']
+glob_f = ['mcib', 'ptor']
 bao = []
 for i in range(1, 6):
     bao.append('offer_price' + str(i))
@@ -35,22 +38,20 @@ data = pd.concat(data).reset_index(drop=True)
 def handle_task(tick: pd.DataFrame, window_size, r_data):
     """多线程函数"""
     for _, g in tick.groupby('securityid'):
-        groups = g.copy()
-        groups['price_mean'] = ta.MA(groups.price, 20)  # 1分钟均价
-        groups['price_mean5'] = ta.MA(groups.price, window_size)  # 5分钟均价
-        groups['r_mean5'] = np.log(groups['price'] / groups['price_mean5'])
-        groups['r_minute'] = ta.ROC(groups.price_mean, 20)
-        groups['r_pre'] = groups['r_minute'].shift(-20)
-        groups['r_real'] = ta.ROC(groups.price, 20)
-        groups['r_real_pre'] = groups['r_real'].shift(-20)
-        groups['mom'] = ta.MOM(groups.price_mean, window_size)
-        groups['r_5'] = ta.ROC(groups.price_mean, window_size)
-
+        price_mean = ta.MA(g.price, 20)  # 1分钟均价
+        price_mean5 = ta.MA(g.price, window_size)  # 5分钟均价
+        r_mean5 = np.log(g['price'] / price_mean5)
+        r_minute = ta.ROC(g.price, 20)
+        r_pre = r_minute.shift(-20)
+        # mom = ta.MOM(price_mean, window_size)
+        r_5 = ta.ROC(g.price, window_size)
+        groups = pd.concat([r_minute, r_5, r_mean5, r_pre], axis=1)
+        groups.columns = ['r_minute', 'r_5', 'r_mean5', 'r_pre']
         """收益波动比"""
-        # groups['open5'] = groups['price'].shift(window_size - 1)
-        # groups['high5'] = ta.MAX(groups.high, window_size)
-        # groups['low5'] = ta.MIN(groups.low, window_size)
-        # groups['rwr'] = (groups['price'] - groups['open5']) / (groups['high5'] - groups['low5'])
+        # open5 = groups['price'].shift(window_size - 1)
+        # high5 = ta.MAX(groups.high, window_size)
+        # low5 = ta.MIN(groups.low, window_size)
+        # groups['rwr'] = (groups['price'] - open5) / (high5 - low5)
 
         """波峰因子"""
         # groups['peaks'] = peak(groups, 20)
@@ -59,11 +60,15 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         # groups['vc'] = cor_vc(groups, window_size)
 
         """买卖压力失衡因子"""
-        # groups['voi'] = voi(groups)
-        groups['voi2'] = voi2(groups)
-        # groups['mofi'] = mofi(groups)
-        groups['ori'] = ori(groups)
-        groups['sori'] = sori(groups)
+        # groups['voi'] = voi(g)
+        # groups['voi2'] = voi2(g)
+        # groups['mofi'] = mofi(g)
+        # groups['ori'] = ori(g)
+        # groups['sori'] = sori(g)
+        # groups['pir'] = pir(g)
+        # groups['rsj'] = rsj(r_minute, window_size)
+        # groups['lambda'] = lam(g, r_minute, window_size)
+        # groups['lqs'] = lqs(g)
 
         """峰度 偏度因子"""
         # groups['skew'] = cul_skew(groups['price_mean'], window_size)
@@ -73,21 +78,29 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         # groups['disaster'] = disaster(groups, window_size)
 
         """量价相关pearson"""
-        # groups['total_value_trade_ms'] = ta.MA(groups['total_value_trade'], 20)
-        # groups['pearson'] = ta.CORREL(groups['total_value_trade_ms'], groups['price_mean'], window_size)
+        # total_value_trade_ms = ta.MA(g['total_value_trade'], 20)
+        # groups['pearson'] = ta.CORREL(total_value_trade_ms, price_mean, window_size)
 
         """市场偏离度"""
-        # groups['mpb'] = mpb(groups)
+        # groups['mpb'] = mpb(g, price_mean)
+        # groups['mpc'] = mpc(g)
+        groups['mcib'] = mci_b(g, price_mean)
+        groups['ptor'] = ptor(g, r_minute)
+        # groups['bni'] = bni(g, window_size)
+        # groups['mb'] = mb(g, window_size)
+        # groups['bam'] = bam(g, window_size)
+        # groups['ba_cov'] = ba_cov(g, window_size)
+        # groups['por'] = por(g, 20)
 
         """积极买入"""
-        # groups['pob'] = positive_ratio(groups, 100)
+        # groups['pob'] = positive_ratio(g, window_size)
 
         lock.acquire()
         r_data.append(groups)
         lock.release()
 
 
-def tick_handle(tick, window_size):
+def tick_handle(tick: pd.DataFrame, window_size):
     """数据预处理，调整涨跌停价格。调仓周期为1分钟，滚动周期为5分钟"""
     group_index = ['securityid', 'date', 'time']
     tick.drop(tick[tick['eq_trading_phase_code'] != 'T'].index, inplace=True)
@@ -127,9 +140,10 @@ def tick_handle(tick, window_size):
     for tick_thread in tick_threads:
         tick_thread.join()
 
-    r_data = pd.concat(r_data)
-    r_data = r_data.merge(fac_neutral(r_data, glob_f), right_index=True, left_index=True, how='left')
-    return r_data
+    r_data = pd.concat(r_data, axis=0)
+    tick = pd.concat([tick, r_data], axis=1, copy=False)
+    tick = pd.concat([tick, fac_neutral(tick, glob_f)], axis=1, copy=False)
+    return tick
 
 
 ws = 5*20
