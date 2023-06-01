@@ -55,7 +55,7 @@ def fac_neutral(rolling_data: pd.DataFrame, factor_origin) -> pd.DataFrame:
     fac_name = [i + '_neutral' for i in factor_origin]
     for (_, _), g in rolling_data.groupby(['date', 'time']):
         neu = []
-        x = g[['r_minute', 'r_5', 'r_mean5', 'const']].values
+        x = g[['r_minute', 'r_5', 'r_mean5', 'const', 'dsmv']].values
         for i in factor_origin:
             neu.append(calculate_residuals(x, g[i].values))
         neu = pd.DataFrame(neu, columns=g.index, index=fac_name)
@@ -70,7 +70,7 @@ def cul_res(rolling_data, factor_origin, neu):
     rrs = []
     for (_, _), g in rolling_data.groupby(['date', 'time']):
         ne = []
-        x = g[['r_minute', 'r_5', 'r_mean5', 'const']].values
+        x = g[['r_minute', 'r_5', 'r_mean5', 'const', 'dsmv']].values
         for i in factor_origin:
             ne.append(calculate_residuals(x, g[i].values))
         ne = pd.DataFrame(ne, columns=g.index, index=fac_name)
@@ -118,26 +118,23 @@ def fac_neutral2(rolling_data: pd.DataFrame, factor_origin):
 def voi(data_dic: pd.DataFrame):
     """voi订单失衡 Volume Order Imbalance20200709-中信建投-因子深度研究系列：高频量价选股因子初探"""
     ticks_num = 20
-    tvt = ta.SUM(data_dic['total_volume_trade'], ticks_num)
     bid_sub_price = data_dic['bid_price1'] - data_dic['bid_price1'].shift(ticks_num)
     ask_sub_price = data_dic['offer_price1'] - data_dic['offer_price1'].shift(ticks_num)
     bid_sub_volume = data_dic['bid_volume1'] - data_dic['bid_volume1'].shift(ticks_num)
     ask_sub_volume = data_dic['offer_volume1'] - data_dic['offer_volume1'].shift(ticks_num)
     bid_volume_change = bid_sub_volume
     ask_volume_change = ask_sub_volume
-    # bid_volume_change[bid_sub_price == 0] = bid_sub_volume[bid_sub_price == 0]
     bid_volume_change[bid_sub_price < 0] = 0
     bid_volume_change[bid_sub_price > 0] = data_dic['bid_volume1'][bid_sub_price > 0]
     ask_volume_change[ask_sub_price < 0] = data_dic['offer_volume1'][ask_sub_price < 0]
     ask_volume_change[ask_sub_price > 0] = 0
-    tick_fac_data = (bid_volume_change - ask_volume_change) / tvt
+    tick_fac_data = (bid_volume_change - ask_volume_change) / 100000
     return tick_fac_data
 
 
 def voi2(data_dic: pd.DataFrame):
     """多档voi订单失衡 Volume Order Imbalance 20200709-中信建投-因子深度研究系列：高频量价选股因子初探"""
     ticks_num = 20
-    tvt = ta.SUM(data_dic['total_volume_trade'], ticks_num)
     weighted_bp = pd.Series(0, index=data_dic.index)
     weighted_op = pd.Series(0, index=data_dic.index)
     weighted_bv = pd.Series(0, index=data_dic.index)
@@ -155,48 +152,37 @@ def voi2(data_dic: pd.DataFrame):
     weighted_ov = weighted_ov / ws
     bid_sub_price = weighted_bp - weighted_bp.shift(ticks_num)
     ask_sub_price = weighted_op - weighted_op.shift(ticks_num)
-    bid_sub_volume = weighted_bv - weighted_bv.shift(ticks_num)
-    ask_sub_volume = weighted_ov - weighted_ov.shift(ticks_num)
-    bid_volume_change = bid_sub_volume
-    ask_volume_change = ask_sub_volume
-    # bid_volume_change[bid_sub_price == 0] = bid_sub_volume[bid_sub_price == 0]
+    bid_volume_change = weighted_bv - weighted_bv.shift(ticks_num)
+    ask_volume_change = weighted_ov - weighted_ov.shift(ticks_num)
     bid_volume_change[bid_sub_price < 0] = 0
     bid_volume_change[bid_sub_price > 0] = weighted_bv[bid_sub_price > 0]
     ask_volume_change[ask_sub_price < 0] = weighted_ov[ask_sub_price < 0]
     ask_volume_change[ask_sub_price > 0] = 0
-    tick_fac_data = (bid_volume_change - ask_volume_change) / tvt
+    tick_fac_data = (bid_volume_change - ask_volume_change) / 100000
     return tick_fac_data
 
 
 def mofi(data: pd.DataFrame):
     """改进voi 中信建投-高频选股因子分类体系"""
     ticks_num = 20
-    tvt = ta.SUM(data['total_volume_trade'], ticks_num)
-    tick_fac_data = []
+    tick_fac_data = pd.Series(0, index=data.index)
     w = [i / 5 for i in range(1, 6)]
     for i in range(1, 6):
         bid_sub_price = data['bid_price' + str(i)] - data['bid_price' + str(i)].shift(ticks_num)
         ask_sub_price = data['offer_price' + str(i)] - data['offer_price' + str(i)].shift(ticks_num)
-        bid_sub_volume = data['bid_volume' + str(i)] - data['bid_volume' + str(i)].shift(ticks_num)
-        ask_sub_volume = data['offer_volume' + str(i)] - data['offer_volume' + str(i)].shift(ticks_num)
-        bid_volume_change = bid_sub_volume
-        ask_volume_change = ask_sub_volume
-        # bid_volume_change[bid_sub_price == 0] = bid_sub_volume[bid_sub_price == 0]
+        bid_volume_change = data['bid_volume' + str(i)] - data['bid_volume' + str(i)].shift(ticks_num)
+        ask_volume_change = data['offer_volume' + str(i)] - data['offer_volume' + str(i)].shift(ticks_num)
         bid_volume_change[bid_sub_price < 0] = -data['bid_volume' + str(i)].shift(ticks_num)[bid_sub_price < 0]
         bid_volume_change[bid_sub_price > 0] = data['bid_volume' + str(i)][bid_sub_price > 0]
         ask_volume_change[ask_sub_price < 0] = data['offer_volume' + str(i)][ask_sub_price < 0]
         ask_volume_change[ask_sub_price > 0] = -data['offer_volume' + str(i)].shift(ticks_num)[ask_sub_price > 0]
-        if i == 1:
-            tick_fac_data = (bid_volume_change - ask_volume_change) * w[i-1]
-        else:
-            tick_fac_data += (bid_volume_change - ask_volume_change) * w[i - 1]
-    tick_fac_data = tick_fac_data / sum(w) / tvt
+        tick_fac_data += (bid_volume_change - ask_volume_change) * w[i - 1]
+    tick_fac_data = tick_fac_data / sum(w) / 100000
     return tick_fac_data
 
 
 def ori(data_dic: pd.DataFrame):
     """ Order Imbalance Ratio 中信建投-高频选股因子分类体系"""
-    ticks_num = 20
     weighted_bv = pd.Series(0, index=data_dic.index)
     weighted_ov = pd.Series(0, index=data_dic.index)
     w = [(1-(i-1)/5) for i in range(1, 6)]
@@ -207,30 +193,23 @@ def ori(data_dic: pd.DataFrame):
     weighted_bv = weighted_bv / ws
     weighted_ov = weighted_ov / ws
     tick_fac_data = (weighted_bv - weighted_ov) / (weighted_bv + weighted_ov)
-    tick_fac_data = ta.SMA(tick_fac_data, ticks_num)
     return tick_fac_data
 
 
 def sori(data_dic: pd.DataFrame):
     """改进加权 Order Imbalance Ratio 中信建投-高频选股因子分类体系"""
-    ticks_num = 20
     w = [(1-(i-1)/5) for i in range(1, 6)]
-    tick_fac_data = []
+    tick_fac_data = pd.Series(0, index=data_dic.index)
     for i in range(1, 6):
         weighted_bv = data_dic['bid_volume' + str(i)]
         weighted_ov = data_dic['offer_volume' + str(i)]
-        if i == 1:
-            tick_fac_data = (weighted_bv - weighted_ov) / (weighted_bv + weighted_ov) * w[i - 1]
-        else:
-            tick_fac_data += (weighted_bv - weighted_ov) / (weighted_bv + weighted_ov) * w[i - 1]
+        tick_fac_data += (weighted_bv - weighted_ov) / (weighted_bv + weighted_ov) * w[i - 1]
     tick_fac_data = tick_fac_data / sum(w)
-    tick_fac_data = ta.SMA(tick_fac_data, ticks_num)
     return tick_fac_data
 
 
 def pir(data_dic: pd.DataFrame):
     """pir Price Imbalance Ratio 中信建投-高频选股因子分类体系"""
-    ticks_num = 20
     weighted_bv = pd.Series(0, index=data_dic.index)
     weighted_ov = pd.Series(0, index=data_dic.index)
     w = [(1 - (i - 1) / 5) for i in range(1, 6)]
@@ -243,8 +222,6 @@ def pir(data_dic: pd.DataFrame):
     tick_fac_data = (weighted_bv - weighted_ov) / (weighted_bv + weighted_ov)
     if tick_fac_data.isna().all():
         tick_fac_data = 0
-    else:
-        tick_fac_data = ta.SMA(tick_fac_data, ticks_num)
     return tick_fac_data
 
 
@@ -307,7 +284,7 @@ def lqs(data_dic: pd.DataFrame):
     else:
         tick_fac = (ta.LN(bp1) - ta.LN(of1)) / (ta.LN(bv1) + ta.LN(ov1))
         tick_fac[tick_fac.isna()] = 0
-        tick_fac = ta.SMA(tick_fac, 10) * 10000
+        tick_fac = tick_fac * 10000
     return tick_fac
 
 
@@ -345,15 +322,14 @@ def disaster(minute_data: pd.DataFrame, window_size):
     return ratio
 
 
-def mpb(data_dic, mid):
+def mpb(data_dic):
     """市价偏离度 Mid-Price Basis 中信建投-因子深度研究系列：高频量价选股因子初探"""
     ticks_num = 20
     va_t = ta.SUM(data_dic['total_value_trade'], ticks_num)
     vol_t = ta.SUM(data_dic['total_volume_trade'], ticks_num)
     tp = va_t / vol_t  # 注意单位
-    tp[vol_t == 0] = np.nan
     tp.fillna(method='ffill', inplace=True)
-    tick_fac_data = tp - (mid + mid.shift(ticks_num)) / 10000 / 2
+    tick_fac_data = tp - (data_dic['price'] + data_dic['price'].shift(ticks_num)) / 10000 / 2
     return tick_fac_data
 
 
@@ -366,7 +342,7 @@ def mpc(data_dic):
         tick_fac_data = 0
     else:
         mid = (ta.SMA(b1, ticks_num) + ta.SMA(o1, ticks_num)) / 2
-        tick_fac_data = ta.ROCP(mid, 100)
+        tick_fac_data = ta.ROCP(mid, ticks_num)
     return tick_fac_data
 
 
@@ -380,7 +356,7 @@ def mpc_max(data_dic: pd.DataFrame):
         if mpc_data.isna().all():
             mpcm = 0
         else:
-            mpcm = ta.MAX(mpc_data, 100)
+            mpcm = ta.MAX(mpc_data, 20)
     return mpcm
 
 
@@ -394,7 +370,7 @@ def mpc_skew(data_dic: pd.DataFrame):
         if mpc_data.isna().all():
             mpcs = 0
         else:
-            mpcs = cul_skew(mpc_data, 100)
+            mpcs = cul_skew(mpc_data, 20)
     return mpcs
 
 
@@ -406,8 +382,8 @@ def mci_b(data_dic: pd.DataFrame):
     for i in range(1, 6):
         dol_vol_b += data_dic['bid_price' + str(i)] * data_dic['bid_volume' + str(i)] / 10000
         q_bid += data_dic['bid_volume' + str(i)]
-    v_wap = - (dol_vol_b / q_bid - mid) / mid * 10000  # 单位：价格变动bp
-    tick_fac = v_wap / dol_vol_b * 10000  # 单位：bp/万元
+    v_wap = - (dol_vol_b / q_bid - mid) / mid * 100
+    tick_fac = v_wap / dol_vol_b * 10000
     if tick_fac.isna().all():
         tick_fac = 0
     return tick_fac
@@ -455,7 +431,6 @@ def mb(data_dic: pd.DataFrame, window_size):
     amt = ta.SUM(data_dic['total_value_trade'], ticks_num)
     tv = ta.SUM(data_dic['num_trades'], ticks_num)
     apt = amt / tv
-    tick_fac = []
     mbs = pd.Series(0, index=data_dic.index)
     for da, group in data_dic.groupby('date'):
         apt_big = apt[group.index].rank(ascending=False)

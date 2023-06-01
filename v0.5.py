@@ -1,11 +1,14 @@
 # import matplotlib.pyplot as plt
 import os
+
+import pandas as pd
+
 from cul_funs import *
 import threading
 import time
 
 # glob_f = ['voi', 'rwr', 'peaks', 'vc', 'skew', 'kurt', 'disaster', 'pearson', 'mpb', 'pob']
-glob_f = ['gamma', 'lsilliq', 'por']
+glob_f = ['pearson', 'rwr']
 bao = []
 for i in range(1, 6):
     bao.append('offer_price' + str(i))
@@ -13,13 +16,15 @@ for i in range(1, 6):
     bao.append('bid_price' + str(i))
     bao.append('bid_volume' + str(i))
 col = ['securityid', 'date', 'time', 'high', 'low', 'last', 'total_value_trade',
-       'total_volume_trade', 'num_trades'] + bao
+       'total_volume_trade', 'num_trades', 'dsmv'] + bao
 
 lock = threading.Lock()
 
 # data = pd.read_csv('E:\\data\\tick.csv', low_memory=False)
 # working_path = 'E:\\data\\tick'
 working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
+dsm = pd.read_csv('/Users/lvfreud/Desktop/中信建投/因子/data/TRD_Dalyr.csv')
+dsm['dsmv'] = np.log(dsm['Dsmvtll'] / 100000.0)
 files_name = []
 data = []
 for root, dirs, files in os.walk(working_path):
@@ -30,6 +35,10 @@ for i in files_name:
     if "20230424_20230504" in i:
         data.append(pd.read_feather(i))
 data = pd.concat(data).reset_index(drop=True)
+data['securityid'] = data.securityid.astype('int')
+data['date'] = pd.to_datetime(data['date'], format='%Y%m%d')
+dsm['Trddt'] = pd.to_datetime(dsm['Trddt'])
+data = data.merge(dsm, left_on=['securityid', 'date'], right_on=['Stkcd', 'Trddt'], how='left')
 
 
 def handle_task(tick: pd.DataFrame, window_size, r_data):
@@ -46,14 +55,14 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         groups.columns = ['r_minute', 'r_5', 'r_mean5', 'r_pre']
 
         """收益波动比"""
-        # open5 = g.price.shift(window_size - 1)
-        # high5 = ta.MAX(g.high, window_size)
-        # low5 = ta.MIN(g.low, window_size)
-        # groups['rwr'] = (g.price - open5) / (high5 - low5)
+        open5 = g.price.shift(window_size - 1)
+        high5 = ta.MAX(g.high, window_size)
+        low5 = ta.MIN(g.low, window_size)
+        groups['rwr'] = (g.price - open5) / (high5 - low5)
 
         """量价相关pearson"""
-        # total_value_trade_ms = g['total_value_trade']
-        # groups['pearson'] = ta.CORREL(total_value_trade_ms, g.price, window_size)
+        total_value_trade_ms = g['total_value_trade']
+        groups['pearson'] = ta.CORREL(total_value_trade_ms, g.price, window_size)
 
         """买卖压力失衡因子"""
         # groups['voi'] = voi(g)
@@ -64,8 +73,8 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         # groups['pir'] = pir(g)
         # groups['rsj'] = rsj(r_minute, window_size)
         # groups['illiq'] = illiq(g, r_minute)
-        groups['lsilliq'] = lsilliq(g, r_minute, window_size)
-        groups['gamma'] = gam(g, r_minute)
+        # groups['lsilliq'] = lsilliq(g, r_minute, window_size)
+        # groups['gamma'] = gam(g, r_minute)
         # groups['lambda'] = lam(g, r_minute, window_size)
         # groups['lqs'] = lqs(g)
 
@@ -76,14 +85,14 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         # groups['vc'] = cor_vc(g, window_size)
 
         """峰度 偏度因子"""
-        # groups['skew'] = cul_skew(groups['price_mean'], window_size)
-        # groups['kurt'] = calculate_kurtosis(groups['price_mean'], window_size)
+        # groups['skew'] = cul_skew(g['price'], window_size)
+        # groups['kurt'] = r_minute.kurt()
 
         """最优波动率"""
         # groups['disaster'] = disaster(groups, window_size)
 
         """市场偏离度"""
-        # groups['mpb'] = mpb(g, price_mean)
+        # groups['mpb'] = mpb(g)
         # groups['mpc'] = mpc(g)
         # groups['mpc_max'] = mpc_max(g)
         # groups['mpc_skew'] = mpc_skew(g)
@@ -93,7 +102,7 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         # groups['mb'] = mb(g, window_size)
         # groups['bam'] = bam(g, 20)
         # groups['ba_cov'] = ba_cov(g, window_size)
-        groups['por'] = por(g, window_size)
+        # groups['por'] = por(g, window_size)
 
         lock.acquire()
         r_data.append(groups)
