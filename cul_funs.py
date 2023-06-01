@@ -30,14 +30,20 @@ def calculate_kurtosis(returns, window_size):
 
 def calculate_residuals(x, y) -> np.array:
     """残差计算"""
-    ones = np.ones((x.shape[0], 1))
-    if x.ndim == 1:
-        x = x.reshape(-1, 1)
-    x = np.concatenate((ones, x), axis=1)
     try:
         beta = np.linalg.inv(x.T @ x) @ x.T @ y
         y_pred = x @ beta
         res = y - y_pred
+    except np.linalg.LinAlgError:  # 如果获得奇异矩阵，则说明残差为0
+        res = 0
+    return res
+
+
+def cb(x, y) -> np.array:
+    """beta计算"""
+    try:
+        beta = np.linalg.inv(x.T @ x) @ x.T @ y
+        res = beta[1]
     except np.linalg.LinAlgError:  # 如果获得奇异矩阵，则说明残差为0
         res = 0
     return res
@@ -49,7 +55,7 @@ def fac_neutral(rolling_data: pd.DataFrame, factor_origin) -> pd.DataFrame:
     fac_name = [i + '_neutral' for i in factor_origin]
     for (_, _), g in rolling_data.groupby(['date', 'time']):
         neu = []
-        x = g[['r_minute', 'r_5', 'r_mean5']].values
+        x = g[['r_minute', 'r_5', 'r_mean5', 'const']].values
         for i in factor_origin:
             neu.append(calculate_residuals(x, g[i].values))
         neu = pd.DataFrame(neu, columns=g.index, index=fac_name)
@@ -64,7 +70,7 @@ def cul_res(rolling_data, factor_origin, neu):
     rrs = []
     for (_, _), g in rolling_data.groupby(['date', 'time']):
         ne = []
-        x = g[['r_minute', 'r_5', 'r_mean5']].values
+        x = g[['r_minute', 'r_5', 'r_mean5', 'const']].values
         for i in factor_origin:
             ne.append(calculate_residuals(x, g[i].values))
         ne = pd.DataFrame(ne, columns=g.index, index=fac_name)
@@ -76,7 +82,7 @@ def cul_res(rolling_data, factor_origin, neu):
 
 
 def fac_neutral2(rolling_data: pd.DataFrame, factor_origin):
-    """中性化"""
+    """多线程中性化"""
     threads = []
     neu = []
     k = 16
@@ -246,16 +252,40 @@ def rsj(returns, window_size):
     """Relative Signed Jump"""
     returns2 = returns ** 2
     rv = ta.SUM(returns2, window_size)
-    rv_up = rv
-    rv_down = rv
-    rv_up[returns < 0] = 0
-    rv_down[returns > 0] = 0
+    rv_up = pd.Series(0, index=returns.index)
+    rv_down = pd.Series(0, index=returns.index)
+    rv_up[returns > 0] = returns2[returns > 0]
+    rv_down[returns < 0] = returns2[returns < 0]
     rv_up = ta.SUM(rv_up, window_size)
     rv_down = ta.SUM(rv_down, window_size)
     tick_fac = (rv_up - rv_down) / rv
     tick_fac[tick_fac == np.nan] = 0
     tick_fac[tick_fac == np.inf] = 0
     return tick_fac
+
+
+def illiq(data_dic: pd.DataFrame, r_minute):
+    liq = r_minute / data_dic['total_volume_trade'] * 1000000
+    liq = abs(liq)
+    liq = ta.SMA(liq, 20)
+    return liq
+
+
+def lsilliq(data_dic: pd.DataFrame, r_minute, window_size):
+    liq = illiq(data_dic, r_minute)
+    b = ta.BETA(abs(r_minute), data_dic['total_volume_trade'], window_size)
+    cv = ta.STDDEV(data_dic['total_volume_trade'], window_size) / ta.SMA(data_dic['total_volume_trade'], window_size)
+    cv.fillna(0, inplace=True)
+    liq = liq - b * (cv ** 2)
+    return liq
+
+
+def gam(data_dic: pd.DataFrame, r_minute):
+    sign_vol = data_dic['total_volume_trade'].copy()
+    sign_vol[r_minute < 0] = -sign_vol[r_minute < 0]
+    x = pd.concat([r_minute.shift(20), sign_vol, data_dic['const']], axis=1)
+    ga = r_minute.rolling(window=100).apply(lambda y: cb(x.loc[y.index].values, y.values))
+    return ga
 
 
 def lam(data_dic: pd.DataFrame, r_minute, window_size):
@@ -277,23 +307,23 @@ def lqs(data_dic: pd.DataFrame):
     else:
         tick_fac = (ta.LN(bp1) - ta.LN(of1)) / (ta.LN(bv1) + ta.LN(ov1))
         tick_fac[tick_fac.isna()] = 0
-        tick_fac = ta.SMA(tick_fac, 20) * 10000
+        tick_fac = ta.SMA(tick_fac, 10) * 10000
     return tick_fac
 
 
 def peak(data_dic: pd.DataFrame, window_size: int):
     """波峰因子"""
-    vol_mean = ta.MA(data_dic.total_volume_trade, window_size)
-    vol_std = ta.STDDEV(data_dic.total_volume_trade, window_size)
-    data_dic.loc[data_dic['total_volume_trade'] > vol_mean+vol_std, 'peak'] = 1
-    data_dic['peak'].fillna(0, inplace=True)
-    return ta.SUM(data_dic.peak, window_size)
+    p = pd.Series(0, index=data_dic.index)
+    vol_mean = ta.MA(data_dic['total_volume_trade'], window_size)
+    vol_std = ta.STDDEV(data_dic['total_volume_trade'], window_size)
+    p[data_dic['total_volume_trade'] > vol_mean+vol_std] = 1
+    return ta.SUM(p, window_size)
 
 
 def cor_vc(data_dic: pd.DataFrame, window_size):
     """量价相关因子"""
     minute_trade = ta.SUM(data_dic.total_volume_trade, 20)  # 分钟交易量
-    dav = (data_dic['price_mean'] - data_dic['price_mean5'])*minute_trade
+    dav = (data_dic['price'] - data_dic['price'].shift(window_size))*minute_trade
     vol_std = ta.STDDEV(data_dic.total_volume_trade, 20)
     last_std = ta.STDDEV(data_dic['last'], 20)
     vc = ta.SUM(dav, window_size)/(vol_std*last_std)
@@ -340,7 +370,35 @@ def mpc(data_dic):
     return tick_fac_data
 
 
-def mci_b(data_dic: pd.DataFrame, price):
+def mpc_max(data_dic: pd.DataFrame):
+    b1 = data_dic['bid_price1']
+    o1 = data_dic['offer_price1']
+    if b1.isna().all() or o1.isna().all():
+        mpcm = 0
+    else:
+        mpc_data = mpc(data_dic)
+        if mpc_data.isna().all():
+            mpcm = 0
+        else:
+            mpcm = ta.MAX(mpc_data, 100)
+    return mpcm
+
+
+def mpc_skew(data_dic: pd.DataFrame):
+    b1 = data_dic['bid_price1']
+    o1 = data_dic['offer_price1']
+    if b1.isna().all() or o1.isna().all():
+        mpcs = 0
+    else:
+        mpc_data = mpc(data_dic)
+        if mpc_data.isna().all():
+            mpcs = 0
+        else:
+            mpcs = cul_skew(mpc_data, 100)
+    return mpcs
+
+
+def mci_b(data_dic: pd.DataFrame):
     """Marginal Cost of Immediacy 边际交易成本 中信建投-高频选股因子分类体系"""
     mid = data_dic['price'] / 10000
     dol_vol_b = pd.Series(0, index=data_dic.index)
@@ -352,69 +410,70 @@ def mci_b(data_dic: pd.DataFrame, price):
     tick_fac = v_wap / dol_vol_b * 10000  # 单位：bp/万元
     if tick_fac.isna().all():
         tick_fac = 0
-    else:
-        tick_fac = ta.SMA(tick_fac, 20)
     return tick_fac
 
 
 def ptor(data_dic: pd.DataFrame, r_minute):
-    ticks_num = 20
+    ticks_num = 100
     amt = ta.SMA(data_dic['total_value_trade'], ticks_num)
     tv = ta.SMA(data_dic['num_trades'], ticks_num)
-    tv[tv == 0] = np.nan
     amt_per_trade = amt / tv
+    amt_per_trade.fillna(0, inplace=True)
     apt_out = ta.SUM(data_dic['total_value_trade'][r_minute < 0], ticks_num) / \
               ta.SUM(data_dic['num_trades'][r_minute < 0], ticks_num)
     tick_fac = apt_out / amt_per_trade
+    tick_fac.fillna(0, inplace=True)
     return tick_fac
 
 
-def bni(data_dic: pd.DataFrame, window_size):
+def bni(data_dic: pd.DataFrame, r_minute, window_size):
     """BNI 大资金流入比例"""
     ticks_num = 20
     amt = ta.SUM(data_dic['total_value_trade'], ticks_num)
     tv = ta.SUM(data_dic['num_trades'], ticks_num)
     apt = amt / tv
-    tick_fac = []
-    for i in range(window_size, len(data_dic)):
-        apt_r = apt.iloc[i-window_size:i]
-        apt_big = apt_r.rank(ascending=False)
-        big_rank = 0.3 * len(apt_r)
-        big_net_in = amt[(apt_big < big_rank) & (data_dic['r_minute'] > 0)].sum() -\
-                     amt[(apt_big < big_rank) & (data_dic['r_minute'] < 0)].sum()
-        big_net_per = big_net_in / tv.iloc[i]
-        tick_fac.append(big_net_per / apt.iloc[i])
-    tick_fac = [np.nan] * window_size + tick_fac
+    amt_big = pd.Series(0, index=data_dic.index)
+    tv_big = pd.Series(0, index=data_dic.index)
+    for da, group in data_dic.groupby('date'):
+        apt_big = apt[group.index].rank(ascending=False)
+        big_rank = 0.3 * len(group)
+        amt_big[(apt_big < big_rank) & (r_minute < 0)] = -data_dic['total_value_trade'][
+            (apt_big < big_rank) & (r_minute < 0)]
+        amt_big[(apt_big < big_rank) & (r_minute > 0)] = data_dic['total_value_trade'][
+            (apt_big < big_rank) & (r_minute > 0)]
+        tv_big[group[apt_big < big_rank].index] = data_dic['num_trades'][group[apt_big < big_rank].index]
+    amt_big = ta.SUM(amt_big, 20) / ta.SUM(tv_big, window_size)
+    amt_big.fillna(0, inplace=True)
+    tick_fac = amt_big / apt
     return tick_fac
 
 
 def mb(data_dic: pd.DataFrame, window_size):
     """MB 大资金驱动涨幅"""
     ticks_num = 20
+    r = np.log(data_dic['price'] / data_dic['price'].shift(1))
     amt = ta.SUM(data_dic['total_value_trade'], ticks_num)
     tv = ta.SUM(data_dic['num_trades'], ticks_num)
     apt = amt / tv
     tick_fac = []
-    mbs = 1
-    for i in range(window_size, len(data_dic)):
-        apt_r = apt.iloc[i-window_size:i]
-        apt_big = apt_r.rank(ascending=False)
-        big_rank = 0.3 * len(apt_r)
-        mbs *= data_dic['r_minute'][apt_big < big_rank] / 20 + 1
-        tick_fac.append(mbs)
-    tick_fac = [np.nan] * window_size + tick_fac
-    return tick_fac
+    mbs = pd.Series(0, index=data_dic.index)
+    for da, group in data_dic.groupby('date'):
+        apt_big = apt[group.index].rank(ascending=False)
+        big_rank = 0.3 * len(group)
+        mbs[group[apt_big < big_rank].index] = r[group[apt_big < big_rank].index] / 20
+    mbs = ta.SUM(mbs, window_size)
+    return mbs
 
 
 def bam(data_dic: pd.DataFrame, window_size):
     buy_positive = pd.DataFrame(0, columns=['t1', 't2', 't3'], index=data_dic.index)
     tvt = ta.SUM(data_dic['total_value_trade'], window_size)
-    trade1 = data_dic['total_value_trade'][data_dic['bid_price1'].shift(1) <= data_dic['last']]
-    trade2 = data_dic['total_value_trade'][data_dic['offer_price1'].shift(1) >= data_dic['last']]
-    trade3 = data_dic['total_value_trade'][~((trade1 > 0) & (trade2 > 0))] / 2
-    buy_positive.loc[data_dic['last'] >= data_dic['bid_price1'].shift(1), 't1'] = trade1
-    buy_positive.loc[data_dic['last'] <= data_dic['offer_price1'].shift(1), 't2'] = trade2
-    buy_positive.loc[data_dic[~((trade1 > 0) & (trade2 > 0))], 't3'] = trade3
+    trade1 = data_dic['total_value_trade'][data_dic['bid_price1'].shift(20) < data_dic['last']]
+    trade2 = data_dic['total_value_trade'][data_dic['offer_price1'].shift(20) > data_dic['last']]
+    trade3 = data_dic['total_value_trade'].drop(pd.concat([trade1, trade2]).drop_duplicates().index) / 2
+    buy_positive.loc[trade1.index, 't1'] = trade1
+    buy_positive.loc[trade2.index, 't2'] = trade2
+    buy_positive.loc[trade3.index, 't3'] = trade3
     bam_t = ta.SUM(buy_positive['t1']+buy_positive['t3'], window_size) / tvt
     sam_t = ta.MA(buy_positive['t2']+buy_positive['t3'], window_size) / tvt
     return bam_t
@@ -422,37 +481,28 @@ def bam(data_dic: pd.DataFrame, window_size):
 
 def ba_cov(data_dic: pd.DataFrame, window_size):
     buy_positive = pd.DataFrame(0, columns=['t1', 't2', 't3'], index=data_dic.index)
-    trade1 = data_dic['total_value_trade'][data_dic['bid_price1'].shift(1) <= data_dic['last']]
-    trade2 = data_dic['total_value_trade'][data_dic['offer_price1'].shift(1) >= data_dic['last']]
-    trade3 = data_dic['total_value_trade'][~((trade1 > 0) & (trade2 > 0))] / 2
-    buy_positive.loc[data_dic['last'] >= data_dic['bid_price1'].shift(1), 't1'] = trade1
-    buy_positive.loc[data_dic['last'] <= data_dic['offer_price1'].shift(1), 't2'] = trade2
-    buy_positive.loc[data_dic[~((trade1 > 0) & (trade2 > 0))], 't3'] = trade3
+    trade1 = data_dic['total_value_trade'][data_dic['bid_price1'].shift(20) < data_dic['last']]
+    trade2 = data_dic['total_value_trade'][data_dic['offer_price1'].shift(20) > data_dic['last']]
+    trade3 = data_dic['total_value_trade'].drop(pd.concat([trade1, trade2]).drop_duplicates().index) / 2
+    buy_positive.loc[trade1.index, 't1'] = trade1
+    buy_positive.loc[trade2.index, 't2'] = trade2
+    buy_positive.loc[trade3.index, 't3'] = trade3
     ba = buy_positive['t1']+buy_positive['t3']
     sa = buy_positive['t2']+buy_positive['t3']
     ba = ta.MA(ba, window_size) / ta.STDDEV(ba, window_size)
     sa = ta.MA(sa, window_size) / ta.STDDEV(sa, window_size)
+    ba.fillna(method='ffill', inplace=True)
     return ba
-
-
-def positive_ratio(data_dic, tick_nums):
-    """积极买入成交额占总成交额的比例"""
-    buy_positive = pd.DataFrame(0, columns=['total_value_trade'], index=data_dic.index)
-    buy_positive.loc[data_dic['last'] >= data_dic['offer_price1'].shift(1), 'total_value_trade'] = \
-        data_dic['total_value_trade'][data_dic['last'] >= data_dic['offer_price1'].shift(1)]
-    tick_fac_data = ta.SUM(buy_positive['total_value_trade'], tick_nums) / \
-                    ta.SUM(data_dic['total_value_trade'], tick_nums)
-    return tick_fac_data
 
 
 def por(data_dic, tick_nums):
     """积极买入成交额占总成交额的比例"""
-    buy_positive = pd.DataFrame(0, columns=['total_value_trade'], index=data_dic.index)
-    op = ta.MA(data_dic['offer_price1'], 20)
-    last = ta.MA(data_dic['last'], 20)
-    tvt = ta.MA(data_dic['total_value_trade'], 20)
-    buy_positive.loc[last >= op.shift(20), 'total_value_trade'] = tvt[last >= op.shift(20)]
-    tick_fac_data = ta.SUM(buy_positive['total_value_trade'], tick_nums) / ta.SUM(tvt, tick_nums)
+    buy_positive = pd.Series(0, index=data_dic.index)
+    op = data_dic['offer_price1']
+    last = data_dic['last']
+    tvt = data_dic['total_value_trade']
+    buy_positive[last >= op.shift(1)] = tvt[last >= op.shift(1)]
+    tick_fac_data = ta.SUM(buy_positive, tick_nums) / ta.SUM(tvt, tick_nums)
     return tick_fac_data
 
 

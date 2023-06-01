@@ -1,14 +1,11 @@
 # import matplotlib.pyplot as plt
 import os
-
-import pandas as pd
-
 from cul_funs import *
 import threading
 import time
 
 # glob_f = ['voi', 'rwr', 'peaks', 'vc', 'skew', 'kurt', 'disaster', 'pearson', 'mpb', 'pob']
-glob_f = ['mcib', 'ptor']
+glob_f = ['gamma', 'lsilliq', 'por']
 bao = []
 for i in range(1, 6):
     bao.append('offer_price' + str(i))
@@ -47,17 +44,16 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         r_5 = ta.ROC(g.price, window_size)
         groups = pd.concat([r_minute, r_5, r_mean5, r_pre], axis=1)
         groups.columns = ['r_minute', 'r_5', 'r_mean5', 'r_pre']
+
         """收益波动比"""
-        # open5 = groups['price'].shift(window_size - 1)
-        # high5 = ta.MAX(groups.high, window_size)
-        # low5 = ta.MIN(groups.low, window_size)
-        # groups['rwr'] = (groups['price'] - open5) / (high5 - low5)
+        # open5 = g.price.shift(window_size - 1)
+        # high5 = ta.MAX(g.high, window_size)
+        # low5 = ta.MIN(g.low, window_size)
+        # groups['rwr'] = (g.price - open5) / (high5 - low5)
 
-        """波峰因子"""
-        # groups['peaks'] = peak(groups, 20)
-
-        """量价相关因子"""
-        # groups['vc'] = cor_vc(groups, window_size)
+        """量价相关pearson"""
+        # total_value_trade_ms = g['total_value_trade']
+        # groups['pearson'] = ta.CORREL(total_value_trade_ms, g.price, window_size)
 
         """买卖压力失衡因子"""
         # groups['voi'] = voi(g)
@@ -67,8 +63,17 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         # groups['sori'] = sori(g)
         # groups['pir'] = pir(g)
         # groups['rsj'] = rsj(r_minute, window_size)
+        # groups['illiq'] = illiq(g, r_minute)
+        groups['lsilliq'] = lsilliq(g, r_minute, window_size)
+        groups['gamma'] = gam(g, r_minute)
         # groups['lambda'] = lam(g, r_minute, window_size)
         # groups['lqs'] = lqs(g)
+
+        """波峰因子"""
+        # groups['peaks'] = peak(g, 20)
+
+        """量价相关因子"""
+        # groups['vc'] = cor_vc(g, window_size)
 
         """峰度 偏度因子"""
         # groups['skew'] = cul_skew(groups['price_mean'], window_size)
@@ -77,23 +82,18 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         """最优波动率"""
         # groups['disaster'] = disaster(groups, window_size)
 
-        """量价相关pearson"""
-        # total_value_trade_ms = ta.MA(g['total_value_trade'], 20)
-        # groups['pearson'] = ta.CORREL(total_value_trade_ms, price_mean, window_size)
-
         """市场偏离度"""
         # groups['mpb'] = mpb(g, price_mean)
         # groups['mpc'] = mpc(g)
-        groups['mcib'] = mci_b(g, price_mean)
-        groups['ptor'] = ptor(g, r_minute)
-        # groups['bni'] = bni(g, window_size)
+        # groups['mpc_max'] = mpc_max(g)
+        # groups['mpc_skew'] = mpc_skew(g)
+        # groups['mcib'] = mci_b(g)
+        # groups['ptor'] = ptor(g, r_minute)
+        # groups['bni'] = bni(g, r_minute, window_size)
         # groups['mb'] = mb(g, window_size)
-        # groups['bam'] = bam(g, window_size)
+        # groups['bam'] = bam(g, 20)
         # groups['ba_cov'] = ba_cov(g, window_size)
-        # groups['por'] = por(g, 20)
-
-        """积极买入"""
-        # groups['pob'] = positive_ratio(g, window_size)
+        groups['por'] = por(g, window_size)
 
         lock.acquire()
         r_data.append(groups)
@@ -111,8 +111,10 @@ def tick_handle(tick: pd.DataFrame, window_size):
     tick.loc[tick['price'].isna(), 'price'] = tick['last']
     tick['minutes'] = (tick['time'] / 100000).astype('int')
     tick.drop(tick[tick['minutes'] < 930].index, inplace=True)
+    tick['const'] = 1
     tick.sort_values(group_index, inplace=True)
 
+    # 多线程计算，cores为线程数，一般为设置为cpu核心数，x86架构下可以提升运算速度
     tick_threads = []
     r_data = []
     cores = 1
@@ -121,7 +123,7 @@ def tick_handle(tick: pd.DataFrame, window_size):
     gs = len_sto // cores
     rmr = len_sto % cores
     sti = 0
-    for tc in range(cores):
+    for tc in range(cores):  # 按线程数将数据分组
         if tc >= len_sto:
             break
         if tc < rmr:
@@ -142,7 +144,7 @@ def tick_handle(tick: pd.DataFrame, window_size):
 
     r_data = pd.concat(r_data, axis=0)
     tick = pd.concat([tick, r_data], axis=1, copy=False)
-    tick = pd.concat([tick, fac_neutral(tick, glob_f)], axis=1, copy=False)
+    tick = pd.concat([tick, fac_neutral(tick, glob_f)], axis=1, copy=False)  # 中性化，多线程建议使用fac_neutral2
     return tick
 
 
@@ -177,6 +179,7 @@ for kk in factors:
     print(kk)
     print(sto.sum()/len(data_IC['date'].drop_duplicates()))
 
+# 绘图
 # sto.cumsum().plot().set_xticks([])
 # plt.show()
 # data_IC.groupby('time')[ic].mean().plot.bar().set_xticks([])
