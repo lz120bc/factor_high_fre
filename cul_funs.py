@@ -139,7 +139,7 @@ def voi2(data_dic: pd.DataFrame):
     weighted_op = pd.Series(0, index=data_dic.index)
     weighted_bv = pd.Series(0, index=data_dic.index)
     weighted_ov = pd.Series(0, index=data_dic.index)
-    w = [(1-(i-1)/5) for i in range(1, 6)]
+    w = [(1 - (i - 1) / 5) for i in range(1, 6)]
     ws = sum(w)
     for i in range(1, 6):
         weighted_bp += data_dic['bid_price' + str(i)] * w[i - 1]
@@ -185,7 +185,7 @@ def ori(data_dic: pd.DataFrame):
     """ Order Imbalance Ratio 中信建投-高频选股因子分类体系"""
     weighted_bv = pd.Series(0, index=data_dic.index)
     weighted_ov = pd.Series(0, index=data_dic.index)
-    w = [(1-(i-1)/5) for i in range(1, 6)]
+    w = [(1 - (i - 1) / 5) for i in range(1, 6)]
     ws = sum(w)
     for i in range(1, 6):
         weighted_bv += data_dic['bid_volume' + str(i)] * w[i - 1]
@@ -198,7 +198,7 @@ def ori(data_dic: pd.DataFrame):
 
 def sori(data_dic: pd.DataFrame):
     """改进加权 Order Imbalance Ratio 中信建投-高频选股因子分类体系"""
-    w = [(1-(i-1)/5) for i in range(1, 6)]
+    w = [(1 - (i - 1) / 5) for i in range(1, 6)]
     tick_fac_data = pd.Series(0, index=data_dic.index)
     for i in range(1, 6):
         weighted_bv = data_dic['bid_volume' + str(i)]
@@ -293,17 +293,17 @@ def peak(data_dic: pd.DataFrame, window_size: int):
     p = pd.Series(0, index=data_dic.index)
     vol_mean = ta.MA(data_dic['total_volume_trade'], window_size)
     vol_std = ta.STDDEV(data_dic['total_volume_trade'], window_size)
-    p[data_dic['total_volume_trade'] > vol_mean+vol_std] = 1
+    p[data_dic['total_volume_trade'] > vol_mean + vol_std] = 1
     return ta.SUM(p, window_size)
 
 
 def cor_vc(data_dic: pd.DataFrame, window_size):
     """量价相关因子"""
     minute_trade = ta.SUM(data_dic.total_volume_trade, 20)  # 分钟交易量
-    dav = (data_dic['price'] - data_dic['price'].shift(window_size))*minute_trade
+    dav = (data_dic['price'] - data_dic['price'].shift(window_size)) * minute_trade
     vol_std = ta.STDDEV(data_dic.total_volume_trade, 20)
     last_std = ta.STDDEV(data_dic['last'], 20)
-    vc = ta.SUM(dav, window_size)/(vol_std*last_std)
+    vc = ta.SUM(dav, window_size) / (vol_std * last_std)
     vc[vc == np.inf] = np.nan
     vc[vc == 0] = np.nan
     return vc
@@ -318,7 +318,7 @@ def disaster(minute_data: pd.DataFrame, window_size):
         results.append(ratio_squared)
     ratio = np.array([np.nan] * window_size + results)
     ratio = np.where(ratio == 0, np.nan, ratio)
-    ratio = minute_data['r_minute'].values/ratio
+    ratio = minute_data['r_minute'].values / ratio
     return ratio
 
 
@@ -449,8 +449,8 @@ def bam(data_dic: pd.DataFrame, window_size):
     buy_positive.loc[trade1.index, 't1'] = trade1
     buy_positive.loc[trade2.index, 't2'] = trade2
     buy_positive.loc[trade3.index, 't3'] = trade3
-    bam_t = ta.SUM(buy_positive['t1']+buy_positive['t3'], window_size) / tvt
-    sam_t = ta.MA(buy_positive['t2']+buy_positive['t3'], window_size) / tvt
+    bam_t = ta.SUM(buy_positive['t1'] + buy_positive['t3'], window_size) / tvt
+    # sam_t = ta.MA(buy_positive['t2']+buy_positive['t3'], window_size) / tvt
     return bam_t
 
 
@@ -462,10 +462,10 @@ def ba_cov(data_dic: pd.DataFrame, window_size):
     buy_positive.loc[trade1.index, 't1'] = trade1
     buy_positive.loc[trade2.index, 't2'] = trade2
     buy_positive.loc[trade3.index, 't3'] = trade3
-    ba = buy_positive['t1']+buy_positive['t3']
-    sa = buy_positive['t2']+buy_positive['t3']
+    ba = buy_positive['t1'] + buy_positive['t3']
+    # sa = buy_positive['t2']+buy_positive['t3']
     ba = ta.MA(ba, window_size) / ta.STDDEV(ba, window_size)
-    sa = ta.MA(sa, window_size) / ta.STDDEV(sa, window_size)
+    # sa = ta.MA(sa, window_size) / ta.STDDEV(sa, window_size)
     ba.fillna(method='ffill', inplace=True)
     return ba
 
@@ -499,7 +499,7 @@ def returns_stock(data: pd.DataFrame, factor) -> pd.DataFrame:
                 end_index = start_index + group_size + 1
             else:
                 end_index = start_index + group_size
-            stocks['r_pre'+str(i)] = stk[start_index:end_index]['r_pre'].reset_index(drop=True)
+            stocks['r_pre' + str(i)] = stk[start_index:end_index]['r_pre'].reset_index(drop=True)
             start_index = end_index
         stocks['date'] = da
         stocks['minutes'] = mi

@@ -7,8 +7,9 @@ from cul_funs import *
 import threading
 import time
 
-# glob_f = ['voi', 'rwr', 'peaks', 'vc', 'skew', 'kurt', 'disaster', 'pearson', 'mpb', 'pob']
-glob_f = ['pearson', 'rwr']
+glob_f = ['pearson', 'rwr', 'voi', 'voi2', 'mofi', 'ori', 'sori', 'pir', 'rsj', 'illiq', 'lsilliq',
+          'lambda', 'lqs', 'peaks', 'vc', 'skew', 'kurt', 'mpb', 'mpc', 'mpc_max', 'mpc_skew',
+          'mcib', 'ptor', 'bni', 'bni', 'mb', 'bam', 'ba_cov', 'por']
 bao = []
 for i in range(1, 6):
     bao.append('offer_price' + str(i))
@@ -21,9 +22,10 @@ col = ['securityid', 'date', 'time', 'high', 'low', 'last', 'total_value_trade',
 lock = threading.Lock()
 
 # data = pd.read_csv('E:\\data\\tick.csv', low_memory=False)
-# working_path = 'E:\\data\\tick'
-working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
-dsm = pd.read_csv('/Users/lvfreud/Desktop/中信建投/因子/data/TRD_Dalyr.csv')
+working_path = 'E:\\data\\tick'
+dsm = pd.read_csv('E:\\data\\TRD_Dalyr.csv')
+# working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
+# dsm = pd.read_csv('/Users/lvfreud/Desktop/中信建投/因子/data/TRD_Dalyr.csv')
 dsm['dsmv'] = np.log(dsm['Dsmvtll'] / 100000.0)
 files_name = []
 data = []
@@ -65,44 +67,44 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         groups['pearson'] = ta.CORREL(total_value_trade_ms, g.price, window_size)
 
         """买卖压力失衡因子"""
-        # groups['voi'] = voi(g)
-        # groups['voi2'] = voi2(g)
-        # groups['mofi'] = mofi(g)
-        # groups['ori'] = ori(g)
-        # groups['sori'] = sori(g)
-        # groups['pir'] = pir(g)
-        # groups['rsj'] = rsj(r_minute, window_size)
-        # groups['illiq'] = illiq(g, r_minute)
-        # groups['lsilliq'] = lsilliq(g, r_minute, window_size)
+        groups['voi'] = voi(g)
+        groups['voi2'] = voi2(g)
+        groups['mofi'] = mofi(g)
+        groups['ori'] = ori(g)
+        groups['sori'] = sori(g)
+        groups['pir'] = pir(g)
+        groups['rsj'] = rsj(r_minute, window_size)
+        groups['illiq'] = illiq(g, r_minute)
+        groups['lsilliq'] = lsilliq(g, r_minute, window_size)
         # groups['gamma'] = gam(g, r_minute)
-        # groups['lambda'] = lam(g, r_minute, window_size)
-        # groups['lqs'] = lqs(g)
+        groups['lambda'] = lam(g, r_minute, window_size)
+        groups['lqs'] = lqs(g)
 
         """波峰因子"""
-        # groups['peaks'] = peak(g, 20)
+        groups['peaks'] = peak(g, 20)
 
         """量价相关因子"""
-        # groups['vc'] = cor_vc(g, window_size)
+        groups['vc'] = cor_vc(g, window_size)
 
         """峰度 偏度因子"""
-        # groups['skew'] = cul_skew(g['price'], window_size)
-        # groups['kurt'] = r_minute.kurt()
+        groups['skew'] = cul_skew(g['price'], window_size)
+        groups['kurt'] = calculate_kurtosis(g['price'], window_size)
 
         """最优波动率"""
         # groups['disaster'] = disaster(groups, window_size)
 
         """市场偏离度"""
-        # groups['mpb'] = mpb(g)
-        # groups['mpc'] = mpc(g)
-        # groups['mpc_max'] = mpc_max(g)
-        # groups['mpc_skew'] = mpc_skew(g)
-        # groups['mcib'] = mci_b(g)
-        # groups['ptor'] = ptor(g, r_minute)
-        # groups['bni'] = bni(g, r_minute, window_size)
-        # groups['mb'] = mb(g, window_size)
-        # groups['bam'] = bam(g, 20)
-        # groups['ba_cov'] = ba_cov(g, window_size)
-        # groups['por'] = por(g, window_size)
+        groups['mpb'] = mpb(g)
+        groups['mpc'] = mpc(g)
+        groups['mpc_max'] = mpc_max(g)
+        groups['mpc_skew'] = mpc_skew(g)
+        groups['mcib'] = mci_b(g)
+        groups['ptor'] = ptor(g, r_minute)
+        groups['bni'] = bni(g, r_minute, window_size)
+        groups['mb'] = mb(g, window_size)
+        groups['bam'] = bam(g, 20)
+        groups['ba_cov'] = ba_cov(g, window_size)
+        groups['por'] = por(g, window_size)
 
         lock.acquire()
         r_data.append(groups)
@@ -126,7 +128,7 @@ def tick_handle(tick: pd.DataFrame, window_size):
     # 多线程计算，cores为线程数，一般为设置为cpu核心数，x86架构下可以提升运算速度
     tick_threads = []
     r_data = []
-    cores = 1
+    cores = 16
     sis = tick['securityid'].drop_duplicates(keep='first')
     len_sto = len(sis)
     gs = len_sto // cores
@@ -153,7 +155,7 @@ def tick_handle(tick: pd.DataFrame, window_size):
 
     r_data = pd.concat(r_data, axis=0)
     tick = pd.concat([tick, r_data], axis=1, copy=False)
-    tick = pd.concat([tick, fac_neutral(tick, glob_f)], axis=1, copy=False)  # 中性化，多线程建议使用fac_neutral2
+    tick = pd.concat([tick, fac_neutral2(tick, glob_f)], axis=1, copy=False)  # 中性化，多线程建议使用fac_neutral2
     return tick
 
 
