@@ -2,6 +2,7 @@ import talib as ta
 import numpy as np
 import pandas as pd
 import threading
+import statsmodels.api as sm
 
 """因子数量统计-26个"""
 lock = threading.Lock()
@@ -39,6 +40,13 @@ def calculate_residuals(x, y) -> np.array:
     return res
 
 
+def calculate_residuals2(x, y) -> np.array:
+    """残差计算"""
+    ols = sm.OLS(y, x).fit()
+    res = y - ols.predict(x)
+    return res
+
+
 def cb(x, y) -> np.array:
     """beta计算"""
     try:
@@ -55,9 +63,11 @@ def fac_neutral(rolling_data: pd.DataFrame, factor_origin) -> pd.DataFrame:
     fac_name = [i + '_neutral' for i in factor_origin]
     for (_, _), g in rolling_data.groupby(['date', 'time']):
         neu = []
-        x = g[['r_minute', 'r_5', 'r_mean5', 'const', 'dsmv']].values
+        x = g[['r_minute', 'r_5', 'r_mean5', 'const', 'dsmv']]
         for i in factor_origin:
-            neu.append(calculate_residuals(x, g[i].values))
+            if x.isna().all().any() or g[i].isna().all():
+                continue
+            neu.append(calculate_residuals(x.values, g[i].values))
         neu = pd.DataFrame(neu, columns=g.index, index=fac_name)
         rolling_residuals.append(neu.T)
     rolling_residuals = pd.concat(rolling_residuals)

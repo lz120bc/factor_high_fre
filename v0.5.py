@@ -7,9 +7,10 @@ from cul_funs import *
 import threading
 import time
 
-glob_f = ['pearson', 'rwr', 'voi', 'voi2', 'mofi', 'ori', 'sori', 'pir', 'rsj', 'illiq', 'lsilliq',
-          'lambda', 'lqs', 'peaks', 'vc', 'skew', 'kurt', 'mpb', 'mpc', 'mpc_max', 'mpc_skew',
-          'mcib', 'ptor', 'bni', 'bni', 'mb', 'bam', 'ba_cov', 'por']
+# glob_f = ['pearson', 'rwr', 'voi', 'voi2', 'mofi', 'ori', 'sori', 'pir', 'rsj', 'illiq', 'lsilliq',
+#           'lambda', 'lqs', 'peaks', 'vc', 'skew', 'kurt', 'mpb', 'mpc', 'mpc_max', 'mpc_skew',
+#           'mcib', 'ptor', 'bni', 'bni', 'mb', 'bam', 'ba_cov', 'por']
+glob_f = ['pearson', 'rwr', 'voi', 'voi2', 'mofi']
 bao = []
 for i in range(1, 6):
     bao.append('offer_price' + str(i))
@@ -22,36 +23,36 @@ col = ['securityid', 'date', 'time', 'high', 'low', 'last', 'total_value_trade',
 lock = threading.Lock()
 
 # data = pd.read_csv('E:\\data\\tick.csv', low_memory=False)
-working_path = 'E:\\data\\tick'
-dsm = pd.read_csv('E:\\data\\TRD_Dalyr.csv')
+# working_path = 'E:\\data\\tick'
+# dsm = pd.read_csv('E:\\data\\TRD_Dalyr.csv')
 # working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
 # dsm = pd.read_csv('/Users/lvfreud/Desktop/中信建投/因子/data/TRD_Dalyr.csv')
-dsm['dsmv'] = np.log(dsm['Dsmvtll'] / 100000.0)
-files_name = []
-data = []
-for root, dirs, files in os.walk(working_path):
-    for fi in files:
-        path = os.path.join(root, fi)
-        files_name.append(path)
-for i in files_name:
-    if "20230424_20230504" in i:
-        data.append(pd.read_feather(i))
-data = pd.concat(data).reset_index(drop=True)
-data['securityid'] = data.securityid.astype('int')
-data['date'] = pd.to_datetime(data['date'], format='%Y%m%d')
-dsm['Trddt'] = pd.to_datetime(dsm['Trddt'])
-data = data.merge(dsm, left_on=['securityid', 'date'], right_on=['Stkcd', 'Trddt'], how='left')
+# dsm['dsmv'] = np.log(dsm['Dsmvtll'] / 100000.0)
+# files_name = []
+# data = []
+# for root, dirs, files in os.walk(working_path):
+#     for fi in files:
+#         path = os.path.join(root, fi)
+#         files_name.append(path)
+# for i in files_name:
+#     if "20230424_20230504" in i:
+#         data.append(pd.read_feather(i))
+# data = pd.concat(data).reset_index(drop=True)
+# data['securityid'] = data.securityid.astype('int')
+# data['date'] = pd.to_datetime(data['date'], format='%Y%m%d')
+# dsm['Trddt'] = pd.to_datetime(dsm['Trddt'])
+# data = data.merge(dsm, left_on=['securityid', 'date'], right_on=['Stkcd', 'Trddt'], how='left')
+# data.to_feather('E:\\data\\tickda.feather')
+data = pd.read_feather('E:\\data\\tickda.feather')
 
 
 def handle_task(tick: pd.DataFrame, window_size, r_data):
     """多线程函数"""
     for _, g in tick.groupby('securityid'):
-        price_mean = ta.MA(g.price, 20)  # 1分钟均价
         price_mean5 = ta.MA(g.price, window_size)  # 5分钟均价
         r_mean5 = np.log(g['price'] / price_mean5)
         r_minute = ta.ROC(g.price, 20)
         r_pre = r_minute.shift(-20)
-        # mom = ta.MOM(price_mean, window_size)
         r_5 = ta.ROC(g.price, window_size)
         groups = pd.concat([r_minute, r_5, r_mean5, r_pre], axis=1)
         groups.columns = ['r_minute', 'r_5', 'r_mean5', 'r_pre']
@@ -70,41 +71,41 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         groups['voi'] = voi(g)
         groups['voi2'] = voi2(g)
         groups['mofi'] = mofi(g)
-        groups['ori'] = ori(g)
-        groups['sori'] = sori(g)
-        groups['pir'] = pir(g)
-        groups['rsj'] = rsj(r_minute, window_size)
-        groups['illiq'] = illiq(g, r_minute)
-        groups['lsilliq'] = lsilliq(g, r_minute, window_size)
+        # groups['ori'] = ori(g)
+        # groups['sori'] = sori(g)
+        # groups['pir'] = pir(g)
+        # groups['rsj'] = rsj(r_minute, window_size)
+        # groups['illiq'] = illiq(g, r_minute)
+        # groups['lsilliq'] = lsilliq(g, r_minute, window_size)
         # groups['gamma'] = gam(g, r_minute)
-        groups['lambda'] = lam(g, r_minute, window_size)
-        groups['lqs'] = lqs(g)
+        # groups['lambda'] = lam(g, r_minute, window_size)
+        # groups['lqs'] = lqs(g)
 
         """波峰因子"""
-        groups['peaks'] = peak(g, 20)
+        # groups['peaks'] = peak(g, 20)
 
         """量价相关因子"""
-        groups['vc'] = cor_vc(g, window_size)
+        # groups['vc'] = cor_vc(g, window_size)
 
         """峰度 偏度因子"""
-        groups['skew'] = cul_skew(g['price'], window_size)
-        groups['kurt'] = calculate_kurtosis(g['price'], window_size)
+        # groups['skew'] = cul_skew(g['price'], window_size)
+        # groups['kurt'] = calculate_kurtosis(g['price'], window_size)
 
         """最优波动率"""
         # groups['disaster'] = disaster(groups, window_size)
 
         """市场偏离度"""
-        groups['mpb'] = mpb(g)
-        groups['mpc'] = mpc(g)
-        groups['mpc_max'] = mpc_max(g)
-        groups['mpc_skew'] = mpc_skew(g)
-        groups['mcib'] = mci_b(g)
-        groups['ptor'] = ptor(g, r_minute)
-        groups['bni'] = bni(g, r_minute, window_size)
-        groups['mb'] = mb(g, window_size)
-        groups['bam'] = bam(g, 20)
-        groups['ba_cov'] = ba_cov(g, window_size)
-        groups['por'] = por(g, window_size)
+        # groups['mpb'] = mpb(g)
+        # groups['mpc'] = mpc(g)
+        # groups['mpc_max'] = mpc_max(g)
+        # groups['mpc_skew'] = mpc_skew(g)
+        # groups['mcib'] = mci_b(g)
+        # groups['ptor'] = ptor(g, r_minute)
+        # groups['bni'] = bni(g, r_minute, window_size)
+        # groups['mb'] = mb(g, window_size)
+        # groups['bam'] = bam(g, 20)
+        # groups['ba_cov'] = ba_cov(g, window_size)
+        # groups['por'] = por(g, window_size)
 
         lock.acquire()
         r_data.append(groups)
@@ -155,7 +156,9 @@ def tick_handle(tick: pd.DataFrame, window_size):
 
     r_data = pd.concat(r_data, axis=0)
     tick = pd.concat([tick, r_data], axis=1, copy=False)
-    tick = pd.concat([tick, fac_neutral2(tick, glob_f)], axis=1, copy=False)  # 中性化，多线程建议使用fac_neutral2
+    del r_data
+    print("culculate done!\tusing:%.2f" % (time.process_time()-start_time))
+    tick = pd.concat([tick, fac_neutral(tick, glob_f)], axis=1, copy=False)  # 中性化，多线程建议使用fac_neutral2
     return tick
 
 
