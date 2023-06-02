@@ -13,8 +13,8 @@ def cul_skew(returns, window_size):
     stddev = ta.STDDEV(returns, window_size)
     skew = (returns - ta.MA(returns, window_size)) / stddev
     skew[skew.isna()] = 0
-    skew[skew == np.inf] = 0
-    skew = ta.SMA(skew ** 3, window_size)
+    skew[np.isinf(skew)] = 0
+    skew = skew ** 3
     return skew
 
 
@@ -24,8 +24,8 @@ def calculate_kurtosis(returns, window_size):
     stddev = ta.STDDEV(returns, window_size)
     kurt = (returns - sma) / stddev
     kurt[kurt.isna()] = 0
-    kurt[kurt == np.inf] = 0
-    kurt = ta.MA(kurt ** 4, window_size)
+    kurt[np.isinf(kurt)] = 0
+    kurt = kurt ** 4
     return kurt
 
 
@@ -33,6 +33,7 @@ def calculate_residuals(x, y) -> np.array:
     """残差计算"""
     try:
         beta = np.linalg.inv(x.T @ x) @ x.T @ y
+        beta = np.where(np.isinf(beta), np.nan, beta)
         y_pred = x @ beta
         res = y - y_pred
     except np.linalg.LinAlgError:  # 如果获得奇异矩阵，则说明残差为0
@@ -60,17 +61,24 @@ def cb(x, y) -> np.array:
 def fac_neutral(rolling_data: pd.DataFrame, factor_origin) -> pd.DataFrame:
     """中性化"""
     rolling_residuals = []
+    const = ['r_minute', 'r_5', 'r_mean5', 'const', 'dsmv']
     fac_name = [i + '_neutral' for i in factor_origin]
     for (_, _), g in rolling_data.groupby(['date', 'time']):
         neu = []
-        x = g[['r_minute', 'r_5', 'r_mean5', 'const', 'dsmv']]
         for i in factor_origin:
-            if x.isna().all().any() or g[i].isna().all():
+            x = g[const + [i]].dropna()
+            if len(x) == 0:
+                neu.append(pd.Series(np.nan))
                 continue
-            neu.append(calculate_residuals(x.values, g[i].values))
-        neu = pd.DataFrame(neu, columns=g.index, index=fac_name)
-        rolling_residuals.append(neu.T)
-    rolling_residuals = pd.concat(rolling_residuals)
+            cr = calculate_residuals(x[const].values, x[i].values)
+            cr = pd.Series(cr, index=x.index)
+            neu.append(cr)
+        neu = pd.concat(neu, axis=1)
+        neu.columns = fac_name
+        if neu.isna().all().all():
+            continue
+        rolling_residuals.append(neu)
+    rolling_residuals = pd.concat(rolling_residuals, axis=0)
     rolling_residuals.fillna(0, inplace=True)
     return rolling_residuals
 
@@ -80,9 +88,9 @@ def cul_res(rolling_data, factor_origin, neu):
     rrs = []
     for (_, _), g in rolling_data.groupby(['date', 'time']):
         ne = []
-        x = g[['r_minute', 'r_5', 'r_mean5', 'const', 'dsmv']].values
+        x = g[['r_minute', 'r_5', 'r_mean5', 'const', 'dsmv']]
         for i in factor_origin:
-            ne.append(calculate_residuals(x, g[i].values))
+            ne.append(calculate_residuals(x, g[i]))
         ne = pd.DataFrame(ne, columns=g.index, index=fac_name)
         rrs.append(ne.T)
     rrs = pd.concat(rrs)
@@ -95,7 +103,7 @@ def fac_neutral2(rolling_data: pd.DataFrame, factor_origin):
     """多线程中性化"""
     threads = []
     neu = []
-    k = 16
+    k = 1
     rolling_data.sort_values(['date', 'time'], inplace=True)
     stk = rolling_data[['date', 'time']].drop_duplicates(keep='first')
     dt_len = len(stk)
@@ -314,8 +322,7 @@ def cor_vc(data_dic: pd.DataFrame, window_size):
     vol_std = ta.STDDEV(data_dic.total_volume_trade, 20)
     last_std = ta.STDDEV(data_dic['last'], 20)
     vc = ta.SUM(dav, window_size) / (vol_std * last_std)
-    vc[vc == np.inf] = np.nan
-    vc[vc == 0] = np.nan
+    vc[np.isinf(vc)] = np.nan
     return vc
 
 
@@ -491,28 +498,25 @@ def por(data_dic, tick_nums):
     return tick_fac_data
 
 
-def returns_stock(data: pd.DataFrame, factor) -> pd.DataFrame:
+def returns_stock(data: pd.DataFrame, factor: str) -> pd.DataFrame:
     sto = []
     k = 10
-    for (da, mi), group in data.groupby(['date', 'minutes']):
-        stk = group.groupby('securityid')[factor].mean().reset_index()
-        stk['date'] = da
-        stk['minutes'] = mi
-        pre = group.drop_duplicates(subset='securityid', keep='last')[['securityid', 'date', 'minutes', 'r_pre']]
-        stk = stk.merge(pre, on=['securityid', 'date', 'minutes'], how='left').sort_values(factor, ascending=False)
-        group_size = len(stk) // k
-        remainder = len(stk) % k
+    fac = data[['date', 'time', 'r_pre', factor]].sort_values(factor, ascending=False)
+    fac.reset_index(drop=True, inplace=True)
+    for (da, ti), group in fac.groupby(['date', 'time']):
+        group_size = len(group) // k
+        remainder = len(group) % k
         start_index = 0
-        stocks = pd.DataFrame()
+        stocks = []
         for i in range(k):
             if i < remainder:
                 end_index = start_index + group_size + 1
             else:
                 end_index = start_index + group_size
-            stocks['r_pre' + str(i)] = stk[start_index:end_index]['r_pre'].reset_index(drop=True)
+            stocks += [group[start_index:end_index]['r_pre'].mean()]
             start_index = end_index
-        stocks['date'] = da
-        stocks['minutes'] = mi
-        sto.append(stocks)
-    sto = pd.concat(sto).set_index(['date', 'minutes'])
+        sto.append(stocks + [da, ti])
+    sto = pd.DataFrame(sto, columns=['r_pre' + str(s) for s in range(k)]+['date', 'time'])
+    sto = sto.groupby(['date', 'time']).mean()
+    sto = sto / 20
     return sto
