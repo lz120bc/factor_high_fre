@@ -63,7 +63,7 @@ def fac_neutral(rolling_data: pd.DataFrame, factor_origin) -> pd.DataFrame:
     rolling_residuals = []
     const = ['r_minute', 'r_5', 'r_mean5', 'const', 'dsmv']
     fac_name = [i + '_neutral' for i in factor_origin]
-    for (_, _), g in rolling_data.groupby(['date', 'time']):
+    for (_, _), g in rolling_data.groupby(['date', 'tick']):
         neu = []
         for i in factor_origin:
             x = g[const + [i]].dropna()
@@ -499,9 +499,9 @@ def por(data_dic: pd.DataFrame, tick_nums) -> pd.Series:
 def returns_stock(data: pd.DataFrame, factor: str) -> pd.DataFrame:
     sto = []
     k = 10
-    fac = data[['date', 'time', 'r_pre', factor]].sort_values(factor, ascending=False)
+    fac = data[['date', 'tick', 'r_pre', factor]].sort_values(factor, ascending=False)
     fac.reset_index(drop=True, inplace=True)
-    for (da, ti), group in fac.groupby(['date', 'time']):
+    for (da, ti), group in fac.groupby(['date', 'tick']):
         group_size = len(group) // k
         remainder = len(group) % k
         start_index = 0
@@ -514,7 +514,7 @@ def returns_stock(data: pd.DataFrame, factor: str) -> pd.DataFrame:
             stocks += [group[start_index:end_index]['r_pre'].mean()]
             start_index = end_index
         sto.append(stocks + [da, ti])
-    sto = pd.DataFrame(sto, columns=['r_pre' + str(s) for s in range(k)]+['date', 'time'])
-    sto = sto.groupby(['date', 'time']).mean()
+    sto = pd.DataFrame(sto, columns=['r_pre' + str(s) for s in range(k)]+['date', 'tick'])
+    sto = sto.groupby(['date', 'tick']).mean()
     sto = sto / 20
     return sto

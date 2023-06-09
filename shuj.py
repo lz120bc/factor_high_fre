@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import numpy as np
+import datetime
 
 # data = pd.read_csv('E:\\data\\tick.csv', low_memory=False)
 # working_path = 'E:\\data\\tick'
@@ -41,7 +42,6 @@ data['minutes'] = (data['time'] / 100000).astype('int')
 data.drop(data[data['minutes'] < 930].index, inplace=True)
 data['const'] = 1
 data.sort_values(group_index, inplace=True)
-data.reset_index(drop=True, inplace=True)
 vol = []
 val = []
 for (sec, date), g in data.groupby(['securityid', 'date']):
@@ -54,4 +54,15 @@ val = pd.concat(val, axis=0)
 vol.name = 'volumes'
 val.name = 'values'
 data = pd.concat([data, vol, val], axis=1)
+tick = pd.to_datetime(data['time'] / 1000, format="%H%M%S")
+tick.name = 'tick'
+sec = tick.dt.second
+sec = sec % 3
+tick.loc[sec == 1] = tick[sec == 1] + datetime.timedelta(seconds=2)
+tick.loc[sec == 2] = tick[sec == 2] + datetime.timedelta(seconds=1)
+tick = tick.dt.time
+data = pd.concat([data, tick], axis=1)
+data.drop_duplicates(subset=['securityid', 'date', 'tick'], inplace=True, keep='last')
+data.reset_index(drop=True, inplace=True)
+
 data.to_feather(working_path+'/tickda.feather')

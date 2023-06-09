@@ -6,7 +6,7 @@ import time
 # glob_f = ['pearson', 'rwr', 'voi', 'voi2', 'mofi', 'ori', 'sori', 'pir', 'rsj', 'illiq', 'lsilliq',
 #           'lambda', 'lqs', 'peaks', 'vc', 'skew', 'kurt', 'mpb', 'mpc', 'mpc_max', 'mpc_skew',
 #           'mcib', 'ptor', 'bni', 'mb', 'bam', 'ba_cov', 'por']
-glob_f = ['bam', 'por']
+glob_f = ['voi', 'sori']
 lock = threading.Lock()
 # working_path = 'E:\\data\\tick'
 working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
@@ -32,11 +32,11 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         # total_value_trade_ms = g['total_value_trade']
         # groups['pearson'] = ta.CORREL(total_value_trade_ms, g.price, window_size)
 
-        # groups['voi'] = voi(g)
+        groups['voi'] = voi(g)
         # groups['voi2'] = voi2(g)
         # groups['mofi'] = mofi(g)
         # groups['ori'] = ori(g)
-        # groups['sori'] = sori(g)
+        groups['sori'] = sori(g)
         # groups['pir'] = pir(g)
         # groups['rsj'] = rsj(r_minute, window_size)
         # groups['illiq'] = illiq(g, r_minute)
@@ -57,9 +57,9 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         # groups['ptor'] = ptor(g, r_minute)
         # groups['bni'] = bni(g, r_minute, window_size)
         # groups['mb'] = mb(g, window_size)
-        groups['bam'] = bam(g, 20)
+        # groups['bam'] = bam(g, 20)
         # groups['ba_cov'] = ba_cov(g, window_size)
-        groups['por'] = por(g, 20)
+        # groups['por'] = por(g, 20)
 
         lock.acquire()
         r_data.append(groups)
@@ -108,7 +108,17 @@ ws = 5*20
 start_time = time.process_time()
 data = tick_handle(data, ws)
 data.sort_values(['securityid', 'date', 'time'], inplace=True)
-# data.to_feather(working_path+'/tickf.feather')
+fac = ['voi_neutral', 'sori_neutral']
+dar = []
+for (date, time), group in data.groupby(['date', 'tick']):
+    g = pd.DataFrame(index=group.index)
+    for factor in fac:
+        g[factor + '_rank'] = group[factor].rank(ascending=False) / len(g)
+    dar.append(g)
+dar = pd.concat(dar, axis=0)
+data = pd.concat([data, dar], axis=1)
+del dar
+data.to_feather(working_path+'/tickf.feather')
 factors = glob_f
 factors = [i + '_neutral' for i in factors]
 
@@ -116,12 +126,12 @@ factors = [i + '_neutral' for i in factors]
 factor_ic = []
 ic = [i + '_ic' for i in factors]
 rank_ic = [i + '_rank_ic' for i in factors]
-for (da, ti), group in data.groupby(['date', 'time']):
+for (da, ti), group in data.groupby(['date', 'tick']):
     fac = group[['r_pre']+factors].corr().iloc[0, 1:].to_list()
     ric = group[['r_pre']+factors].rank().corr().iloc[0, 1:].to_list()
     factor_ic.append([da, ti] + fac + ric)
-data_IC = pd.DataFrame(factor_ic, columns=['date', 'time'] + ic + rank_ic)
-data_IC = data_IC.sort_values(['date', 'time'])
+data_IC = pd.DataFrame(factor_ic, columns=['date', 'tick'] + ic + rank_ic)
+data_IC = data_IC.sort_values(['date', 'tick'])
 print(data_IC[rank_ic].mean())
 del factor_ic
 
