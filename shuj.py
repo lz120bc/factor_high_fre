@@ -7,6 +7,7 @@ import numpy as np
 # dsm = pd.read_csv('E:\\data\\TRD_Dalyr.csv')
 working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
 dsm = pd.read_csv('/Users/lvfreud/Desktop/中信建投/因子/data/TRD_Dalyr.csv')
+dsm.drop_duplicates(subset=['Stkcd'], inplace=True, keep='first')
 dsm['dsmv'] = np.log(dsm['Dsmvtll'] / 100000.0)
 files_name = []
 data = []
@@ -28,8 +29,7 @@ for i in files_name:
 data = pd.concat(data).reset_index(drop=True)
 data['securityid'] = data.securityid.astype('int')
 data['date'] = pd.to_datetime(data['date'], format='%Y%m%d')
-dsm['Trddt'] = pd.to_datetime(dsm['Trddt'])
-data = data.merge(dsm, left_on=['securityid', 'date'], right_on=['Stkcd', 'Trddt'], how='left')
+data = data.merge(dsm, left_on='securityid', right_on='Stkcd', how='left')
 group_index = ['securityid', 'date', 'time']
 data.drop(data[data['eq_trading_phase_code'] != 'T'].index, inplace=True)
 data.drop(data.columns[~data.columns.isin(col)], axis=1, inplace=True)
@@ -42,4 +42,16 @@ data.drop(data[data['minutes'] < 930].index, inplace=True)
 data['const'] = 1
 data.sort_values(group_index, inplace=True)
 data.reset_index(drop=True, inplace=True)
+vol = []
+val = []
+for (sec, date), g in data.groupby(['securityid', 'date']):
+    volumes = g['total_volume_trade'] - g['total_volume_trade'].shift(1)
+    values = g['total_value_trade'] - g['total_value_trade'].shift(1)
+    vol.append(volumes)
+    val.append(values)
+vol = pd.concat(vol, axis=0)
+val = pd.concat(val, axis=0)
+vol.name = 'volumes'
+val.name = 'values'
+data = pd.concat([data, vol, val], axis=1)
 data.to_feather(working_path+'/tickda.feather')
