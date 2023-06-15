@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 from cul_funs import *
 import threading
 import time
+import shuj
 
 # glob_f = ['pearson', 'rwr', 'voi', 'voi2', 'mofi', 'ori', 'sori', 'pir', 'rsj', 'illiq', 'lsilliq',
 #           'lambda', 'lqs', 'peaks', 'vc', 'skew', 'kurt', 'mpb', 'mpc', 'mpc_max', 'mpc_skew',
@@ -118,7 +119,7 @@ for (date, time), group in data.groupby(['date', 'tick']):
 dar = pd.concat(dar, axis=0)
 data = pd.concat([data, dar], axis=1)
 del dar
-data.to_feather(working_path+'/tickf.feather')
+# data.to_feather(working_path+'/tickf.feather')
 factors = glob_f
 factors = [i + '_neutral' for i in factors]
 

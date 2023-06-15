@@ -4,7 +4,6 @@ import pandas as pd
 import threading
 import statsmodels.api as sm
 
-"""因子数量统计-26个"""
 lock = threading.Lock()
 
 

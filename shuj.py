@@ -7,7 +7,7 @@ import datetime
 # working_path = 'E:\\data\\tick'
 # dsm = pd.read_csv('E:\\data\\TRD_Dalyr.csv')
 working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
-dsm = pd.read_csv('/Users/lvfreud/Desktop/中信建投/因子/data/TRD_Dalyr.csv')
+dsm = pd.read_csv('/Users/lvfreud/Desktop/中信建投/因子/data/TRD_Dalyr.csv')  # 市值文件
 dsm.drop_duplicates(subset=['Stkcd'], inplace=True, keep='first')
 dsm['dsmv'] = np.log(dsm['Dsmvtll'] / 100000.0)
 files_name = []
