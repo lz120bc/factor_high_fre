@@ -19,26 +19,35 @@ def vwap(tick: pd.DataFrame):
     return price
 
 
-def dynamic_twap(tick: pd.DataFrame, beta: float, factor='sori_neutral_rank'):
+def dynamic_twap(tick: pd.DataFrame, factor='sori_neutral_rank'):
     bid_price = tick['bid_price1'].values
+    ask_price = tick['offer_price1'].values
+    ret = tick['r_minute'].values  # 过去1分钟收益
+    ret = ret / 20
+    last_20 = ta.MAX(tick['last'], 20).shift(20).values  # 未来20tick最高价
     factor_tick = tick[factor].values
     nums = len(tick)
     total_volume = 10000000  # 10万手
     remain_volume = total_volume
-    lng = 200
+    lng = 100
     total_value = 0
-    sr = 0
+    sr = 1
     for i in range(nums):
-        sr += factor_tick[i]
+        sr *= ret[i] / 20 + 1
         if i >= lng:
-            sr -= factor_tick[i - lng]
+            sr /= ret[i - lng] / 20 + 1
         if np.isnan(bid_price[i]) or bid_price[i] == 0:  # 跌停不能卖出
             continue
-        sell_volume = remain_volume / (nums - i)
-        sell_volume = sell_volume // 100 * 100
-        if sr <= beta or factor_tick[i] > 0.95:
+        if sr > 1 and factor_tick[i] > 0.3 and ask_price[i] < last_20[i]:  # 缓慢上涨按ask_price卖出
+            sell_volume = remain_volume / (nums - i)
+            sell_volume = sell_volume // 100 * 100
             remain_volume -= sell_volume
-            total_value += sell_volume * bid_price[i]
+            total_value += sell_volume * ask_price[i]
+        elif sr <= 1 and factor_tick[i] > 0.8:  # 快速下跌按照bid_price卖出
+            sell_volume = remain_volume / (nums - i)
+            sell_volume = sell_volume // 100 * 100
+            remain_volume -= sell_volume
+            total_value += sell_volume * ask_price[i]
         if remain_volume == 0:
             break
     if remain_volume > 0:  # 如果存在未卖出股票，按收盘价卖出
@@ -94,11 +103,12 @@ def dynamic_vwap(tick: pd.DataFrame, beta: float, factor='sori_neutral_rank'):
 
 chg = []
 for (date, sec), group in data.groupby(['date', 'securityid']):
-    if date == '2023-04-25':  # 第一天缺少较多数据
-        price2 = dynamic_twap(group, 100)
-        price1 = twap(group)
-        bp = (price2 - price1) / price1 * 10000
-        chg.append([sec, date, price1, price2, bp])
+    if date == '2023-04-24':
+        continue
+    price2 = dynamic_twap(group)
+    price1 = twap(group)
+    bp = (price2 - price1) / price1 * 10000
+    chg.append([sec, date, price1, price2, bp])
 chg = pd.DataFrame(chg, columns=['sec', 'date', 'twap', 'model1', 'bp'])
 w = (chg['bp'] > 0).sum() / len(chg) * 100
 print("胜率：%.2f%%" % w)

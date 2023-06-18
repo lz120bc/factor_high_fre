@@ -110,15 +110,15 @@ start_time = time.process_time()
 data = tick_handle(data, ws)
 data.sort_values(['securityid', 'date', 'time'], inplace=True)
 fac = ['voi_neutral', 'sori_neutral']
-dar = []
-for (date, time), group in data.groupby(['date', 'tick']):
-    g = pd.DataFrame(index=group.index)
-    for factor in fac:
-        g[factor + '_rank'] = group[factor].rank(ascending=False) / len(g)
-    dar.append(g)
-dar = pd.concat(dar, axis=0)
-data = pd.concat([data, dar], axis=1)
-del dar
+# dar = []
+# for (date, time), group in data.groupby(['date', 'tick']):
+#     g = pd.DataFrame(index=group.index)
+#     for factor in fac:
+#         g[factor + '_rank'] = group[factor].rank(ascending=False) / len(g)
+#     dar.append(g)
+# dar = pd.concat(dar, axis=0)
+# data = pd.concat([data, dar], axis=1)
+# del dar
 # data.to_feather(working_path+'/tickf.feather')
 factors = glob_f
 factors = [i + '_neutral' for i in factors]
