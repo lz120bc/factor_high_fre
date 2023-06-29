@@ -19,35 +19,66 @@ def vwap(tick: pd.DataFrame):
     return price
 
 
-def dynamic_twap(tick: pd.DataFrame, factor='sori_neutral_rank'):
+def dynamic_twap(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.8, factor='sori_neutral_rank'):
     bid_price = tick['bid_price1'].values
+    bid_vol = tick['bid_volume1'].values
     ask_price = tick['offer_price1'].values
-    ret = tick['r_minute'].values  # 过去1分钟收益
-    ret = ret / 20
-    last_20 = ta.MAX(tick['last'], 20).shift(20).values  # 未来20tick最高价
+    volume = tick['volumes'].values
+    values = tick['values'].values
+    last = tick['last'].values
+    tick_price = values / volume
+    vol_ask = (ask_price - tick_price) / (ask_price - bid_price) * volume  # 估计askprice1成交量
+    vol_ask = np.where(np.isnan(vol_ask), 0, vol_ask)
+    ret = (tick['price'] / tick['price'].shift(1))
+    ret = ret.fillna(1).values
     factor_tick = tick[factor].values
     nums = len(tick)
-    total_volume = 10000000  # 10万手
+    total_volume = tick.iloc[-1]['total_volume_trade'] * 0.25
     remain_volume = total_volume
-    lng = 100
     total_value = 0
     sr = 1
+    price_seq = np.array([])  # 挂单价格
+    volume_seq = np.array([])  # 挂单量
     for i in range(nums):
-        sr *= ret[i] / 20 + 1
+        sr *= ret[i]
         if i >= lng:
-            sr /= ret[i - lng] / 20 + 1
-        if np.isnan(bid_price[i]) or bid_price[i] == 0:  # 跌停不能卖出
+            sr /= ret[i - lng]
+        if np.isnan(factor_tick[i]):
             continue
-        if sr > 1 and factor_tick[i] > 0.3 and ask_price[i] < last_20[i]:  # 缓慢上涨按ask_price卖出
+        if sum(volume_seq) > 0:
+            sell_volume = np.where(price_seq <= last[i], volume_seq, 0)  # 价格符合的挂单价格的volume
+            s = 0  # 挂单成交量
+            for k in range(len(sell_volume)):
+                if sell_volume[k] == 0:
+                    continue
+                if s + sell_volume[k] <= vol_ask[i]:  # 未超过volume估计值，则该挂单全部卖出
+                    s += sell_volume[k]
+                    volume_seq[k] = 0
+                else:
+                    volume_seq[k] = s + sell_volume[k] - vol_ask[i]  # 剩余未卖出
+                    sell_volume[k] = vol_ask[i] - s  # 卖出份额
+                    s += sell_volume[k]
+                    break
+            if k+1 < len(sell_volume):  # 此后订单全都未卖出
+                for j in range(k+1, len(sell_volume)):
+                    sell_volume[j] = 0
+            remain_volume -= s
+            total_value += sell_volume @ price_seq
+        if len(price_seq) > 20:  # 撤单
+            price_seq = np.delete(price_seq, 0)
+            volume_seq = np.delete(volume_seq, 0)
+        if sr > 1 and factor_tick[i] > beta1:  # 缓慢上涨按ask_price卖出
             sell_volume = remain_volume / (nums - i)
             sell_volume = sell_volume // 100 * 100
-            remain_volume -= sell_volume
-            total_value += sell_volume * ask_price[i]
-        elif sr <= 1 and factor_tick[i] > 0.8:  # 快速下跌按照bid_price卖出
+            price_seq = np.append(price_seq, ask_price[i])  # 挂单
+            volume_seq = np.append(volume_seq, sell_volume)
+        elif sr <= 1 and factor_tick[i] > beta2:  # 快速下跌按照bid_price卖出
             sell_volume = remain_volume / (nums - i)
+            if sell_volume > bid_vol[i]:
+                sell_volume = bid_vol[i]
             sell_volume = sell_volume // 100 * 100
             remain_volume -= sell_volume
-            total_value += sell_volume * ask_price[i]
+            total_value += sell_volume * bid_price[i]
         if remain_volume == 0:
             break
     if remain_volume > 0:  # 如果存在未卖出股票，按收盘价卖出
@@ -56,42 +87,14 @@ def dynamic_twap(tick: pd.DataFrame, factor='sori_neutral_rank'):
     return price / 10000.0
 
 
-def dynamic_vwap(tick: pd.DataFrame, beta: float, factor='sori_neutral_rank'):
-    time = tick[['tick']]
-    time = time.merge(volume_tick, on='tick', how='left')
-    time_ratio = time['vw'] / time['vw'].sum()  # 标准化
-    bid_price = tick['bid_price1'].values
-    nums = len(tick)
-    base = (time_ratio / (1 - time_ratio.cumsum()).shift(1)).shift(-1).values  # 计算w
-    base[nums - 1] = 1
-    total_volume = 10000000  # 10万手
-    flag = (tick[factor] > beta).astype('int').values
-    remain_volume = total_volume
-    total_value = 0
-    for i in range(nums):
-        if np.isnan(bid_price[i]) or flag[i] == 0:  # 跌停不能卖出
-            continue
-        sell_volume = remain_volume * base[i]
-        sell_volume = sell_volume // 100 * 100
-        remain_volume -= sell_volume
-        total_value += sell_volume * bid_price[i]
-        if remain_volume == 0:  # 剩余为0退
-            break
-    if remain_volume > 0:
-        total_value += remain_volume * tick['last'].iloc[-1]
-    price = total_value / total_volume
-    return price / 10000.0
-
-
 # 寻参优化
-# sori -0.75
-# sori_rank 0.93
-# for b in np.linspace(0, 1, 5):
+# for b in range(100, 400, 50):
+# for b in np.linspace(100, 400, 6):
 #     chg = []
 #     for (date, ss), group in data.groupby(['date', 'securityid']):
 #         if date == '2023-04-24':
 #             continue
-#         price2 = dynamic_twap(group, 0, b)
+#         price2 = dynamic_twap(group, b)
 #         price1 = twap(group)
 #         bp = (price2 - price1) / price1 * 10000
 #         chg.append(bp)
@@ -103,7 +106,7 @@ def dynamic_vwap(tick: pd.DataFrame, beta: float, factor='sori_neutral_rank'):
 
 chg = []
 for (date, sec), group in data.groupby(['date', 'securityid']):
-    if date == '2023-04-24':
+    if np.isnan(group['bid_price1']).any() or np.isnan(group['offer_price1']).any():  # 跳过涨跌停的天
         continue
     price2 = dynamic_twap(group)
     price1 = twap(group)
@@ -113,4 +116,4 @@ chg = pd.DataFrame(chg, columns=['sec', 'date', 'twap', 'model1', 'bp'])
 w = (chg['bp'] > 0).sum() / len(chg) * 100
 print("胜率：%.2f%%" % w)
 print("平均价格提高：%.2fbp" % chg['bp'].mean())
-# chg.to_csv('model1.csv', index=False)
+chg.to_csv('model1.csv', index=False)
