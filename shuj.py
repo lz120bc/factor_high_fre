@@ -3,6 +3,7 @@ import os
 import numpy as np
 import datetime
 
+# 数据预处理
 # data = pd.read_csv('E:\\data\\tick.csv', low_memory=False)
 # working_path = 'E:\\data\\tick'
 # dsm = pd.read_csv('E:\\data\\TRD_Dalyr.csv')
@@ -47,6 +48,8 @@ val = []
 for (sec, date), g in data.groupby(['securityid', 'date']):
     volumes = g['total_volume_trade'] - g['total_volume_trade'].shift(1)
     values = g['total_value_trade'] - g['total_value_trade'].shift(1)
+    volumes[0] = g['total_volume_trade'][0]
+    values[0] = g['total_value_trade'][0]
     vol.append(volumes)
     val.append(values)
 vol = pd.concat(vol, axis=0)

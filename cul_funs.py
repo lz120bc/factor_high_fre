@@ -4,6 +4,7 @@ import pandas as pd
 import threading
 import statsmodels.api as sm
 
+# 计算函数
 lock = threading.Lock()
 
 
