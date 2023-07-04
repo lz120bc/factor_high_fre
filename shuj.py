@@ -48,8 +48,8 @@ val = []
 for (sec, date), g in data.groupby(['securityid', 'date']):
     volumes = g['total_volume_trade'] - g['total_volume_trade'].shift(1)
     values = g['total_value_trade'] - g['total_value_trade'].shift(1)
-    volumes[0] = g['total_volume_trade'][0]
-    values[0] = g['total_value_trade'][0]
+    volumes.iloc[0] = g.iloc[0]['total_volume_trade']
+    values.iloc[0] = g.iloc[0]['total_value_trade']
     vol.append(volumes)
     val.append(values)
 vol = pd.concat(vol, axis=0)

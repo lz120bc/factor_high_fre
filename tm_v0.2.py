@@ -1,5 +1,6 @@
 import pandas as pd
 import numpy as np
+import talib as ta
 
 working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
 data = pd.read_feather(working_path + '/tickf.feather')  # 存放因子数据
@@ -20,13 +21,9 @@ def vwap(tick: pd.DataFrame):
 
 def dynamic_twap(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.8, factor='sori_neutral_rank'):
     bid_price1 = tick['bid_price1'].values
-    bid_vol = tick['bid_volume1'].values
     ask_price = tick['offer_price1'].values
-    volume = tick['volumes'].values
-    values = tick['values'].values
-    tick_price = values / volume * 10000
-    vol_ask = (tick_price - bid_price1) / (ask_price - bid_price1) * volume  # 估计每个tick按askprice1的成交量
-    vol_ask = np.where(np.isnan(vol_ask), 0, vol_ask)
+    last_20 = ta.MAX(tick['last'], 20).shift(19)
+    last_20 = last_20.fillna(method='ffill').values
     ret = (tick['price'] / tick['price'].shift(1))
     ret = ret.fillna(1).values
     factor_tick = tick[factor].values
@@ -41,26 +38,13 @@ def dynamic_twap(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: 
             sr /= ret[i - lng]
         if np.isnan(factor_tick[i]):
             continue
-        if sr >= 1 and factor_tick[i] > beta1:  # 缓慢上涨按ask_price卖出
+        if sr >= 1 and factor_tick[i] > beta1 and ask_price[i] <= last_20[i]:  # 缓慢上涨按ask_price卖出
             sell_volume = remain_volume / (nums - i)
             sell_volume = sell_volume // 100 * 100
-            s = 0
-            t2 = 21
-            if i + t2 >= nums:
-                t2 = nums - i
-            for j in range(1, t2):
-                if ask_price[i] < bid_price1[i+j]:
-                    s += volume[i+j]
-                elif ask_price[i+j] >= ask_price[i] >= bid_price1[i+j]:
-                    s += vol_ask[i+j]
-            if sell_volume > s:
-                sell_volume = s
             remain_volume -= sell_volume
             total_value += sell_volume * ask_price[i]
         elif sr < 1 and factor_tick[i] > beta2:  # 快速下跌按照bid_price卖出
             sell_volume = remain_volume / (nums - i)
-            if sell_volume > bid_vol[i]:
-                sell_volume = bid_vol[i]
             sell_volume = sell_volume // 100 * 100
             remain_volume -= sell_volume
             total_value += sell_volume * bid_price1[i]
@@ -94,7 +78,7 @@ fac = ['voi_neutral_rank', 'sori_neutral_rank', 'pearson_neutral_rank', 'mpc_ske
        'por_neutral_rank']
 data['port'] = data[fac].mean(axis=1)
 for (date, sec), group in data.groupby(['date', 'securityid']):
-    if np.isnan(group['bid_price1']).any() or np.isnan(group['offer_price1']).any() or date == '2023-04-24':  # 跳过涨跌停的天
+    if date == '2023-04-24':  # 跳过涨跌停的天
         continue
     price1 = twap(group)
     price2 = dynamic_twap(group, 200, 0.3, 0.8, 'sori_neutral_rank')
