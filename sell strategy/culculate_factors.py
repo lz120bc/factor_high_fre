@@ -1,16 +1,16 @@
-import pandas as pd
 import os
-import numpy as np
 import datetime
+from funs2 import *
+import threading
 
-# 数据预处理
-# data = pd.read_csv('E:\\data\\tick.csv', low_memory=False)
-# working_path = 'E:\\data\\tick'
-# dsm = pd.read_csv('E:\\data\\TRD_Dalyr.csv')
-working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
+# 市值处理
 dsm = pd.read_csv('/Users/lvfreud/Desktop/中信建投/因子/data/TRD_Dalyr.csv')  # 市值文件
 dsm.drop_duplicates(subset=['Stkcd'], inplace=True, keep='first')
 dsm['dsmv'] = np.log(dsm['Dsmvtll'] / 100000.0)
+
+# tick数据预处理
+working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
+fac = ['voi_neutral', 'sori_neutral', 'pearson_neutral', 'mpc_skew_neutral', 'bam_neutral', 'por_neutral']
 files_name = []
 data = []
 bao = []
@@ -26,12 +26,11 @@ for root, dirs, files in os.walk(working_path):
         path = os.path.join(root, fi)
         files_name.append(path)
 for i in files_name:
-    if "20230424_20230504" in i:
+    if "20230601_20230609" in i:
         data.append(pd.read_feather(i))
 data = pd.concat(data).reset_index(drop=True)
-data['securityid'] = data.securityid.astype('int')
-data['date'] = pd.to_datetime(data['date'], format='%Y%m%d')
-data = data.merge(dsm, left_on='securityid', right_on='Stkcd', how='left')
+data['Stkcd'] = data.securityid.astype('int')
+data = data.merge(dsm, on='Stkcd', how='left')
 group_index = ['securityid', 'date', 'time']
 data.drop(data[data['eq_trading_phase_code'] != 'T'].index, inplace=True)
 data.drop(data.columns[~data.columns.isin(col)], axis=1, inplace=True)
@@ -69,4 +68,19 @@ data = pd.concat([data, tick], axis=1)
 data.drop_duplicates(subset=['securityid', 'date', 'tick'], inplace=True, keep='last')
 data.reset_index(drop=True, inplace=True)
 
-data.to_feather(working_path+'/tickda.feather')
+lock = threading.Lock()
+ws = 5*20
+data = tick_handle(data, ws)
+data.sort_values(['securityid', 'date', 'time'], inplace=True)
+
+# 输出标准化因子值
+dar = []
+for (date, time), group in data.groupby(['date', 'tick']):
+    g = pd.DataFrame(index=group.index)
+    for factor in fac:
+        g[factor + '_rank'] = group[factor].rank(ascending=False) / len(g)
+    dar.append(g)
+dar = pd.concat(dar, axis=0)
+data = pd.concat([data, dar], axis=1)
+del dar
+data.to_feather(working_path+'/tickf.feather')

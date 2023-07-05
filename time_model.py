@@ -4,9 +4,6 @@ from scipy.ndimage import shift
 
 working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
 data = pd.read_feather(working_path + '/tickf.feather')  # 存放因子数据
-volume_tick = pd.read_feather(working_path + '/vwap.feather')  # 根据历史数据构造
-volume_tick.fillna(0, inplace=True)
-data['date'] = data['date'].astype('str')
 
 
 def twap(tick: pd.DataFrame):
@@ -109,12 +106,12 @@ def dynamic_twap(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: 
                         sell_volume1[k] = bid_vol1[i-1] - s1  # 卖出份额
                         s1 += sell_volume1[k]
                 else:
-                    if s + sell_volume1[k] <= vol_ask[i-1]:  # 总成交量未超过估计volume，则该单可以全部卖出
+                    if s + sell_volume1[k] <= vol_ask[i]:  # vol_ask实际上估计的是上个ask_price1成交量
                         s += sell_volume1[k]
                         volume_seq[k] = 0
                     else:  # 超过volume的部分放到序列的第k个中
-                        volume_seq[k] = s + sell_volume1[k] - vol_ask[i-1]  # 剩余未卖出
-                        sell_volume1[k] = vol_ask[i-1] - s  # 卖出份额
+                        volume_seq[k] = s + sell_volume1[k] - vol_ask[i]  # 剩余未卖出
+                        sell_volume1[k] = vol_ask[i] - s  # 卖出份额
                         s += sell_volume1[k]
                         break
             s = s + s1 + s2 + s3 + s4 + s5
@@ -185,18 +182,18 @@ for (date, sec), group in data.groupby(['date', 'securityid']):
     if np.isnan(group['bid_price1']).any() or np.isnan(group['offer_price1']).any():  # 跳过涨跌停的天
         continue
     price1 = twap(group)
-    # price2 = dynamic_twap(group, factor='port')
-    # bp = (price2 - price1) / price1 * 10000
-    # chg.append([sec, date, price1, price2, bp])
-    p = []
-    for name in fac:
-        p.append((dynamic_twap(group, factor=name) - price1) / price1 * 10000)
-    chg.append([sec, date, price1] + p)
-chg = pd.DataFrame(chg, columns=['sec', 'date', 'twap']+fac)
-print((chg[fac] > 0).sum() / len(chg))
-print(chg[fac].mean())
-chg.to_csv('model1.csv', index=False)
-# chg = pd.DataFrame(chg, columns=['sec', 'date', 'twap', 'model', 'bp'])
-# w = (chg['bp'] > 0).sum() / len(chg)
-# print("胜率：%.2f%%" % w)
-# print("平均价格提高：%.2fbp" % chg['bp'].mean())
+    price2 = dynamic_twap(group, factor='sori_neutral_rank')
+    bp = (price2 - price1) / price1 * 10000
+    chg.append([sec, date, price1, price2, bp])
+    # p = []
+    # for name in fac:
+    #     p.append((dynamic_twap(group, factor=name) - price1) / price1 * 10000)
+    # chg.append([sec, date, price1] + p)
+# chg = pd.DataFrame(chg, columns=['sec', 'date', 'twap']+fac)
+# print((chg[fac] > 0).sum() / len(chg))
+# print(chg[fac].mean())
+# chg.to_csv('model1.csv', index=False)
+chg = pd.DataFrame(chg, columns=['sec', 'date', 'twap', 'model', 'bp'])
+w = (chg['bp'] > 0).sum() / len(chg) * 100
+print("胜率：%.2f%%" % w)
+print("平均价格提高：%.2fbp" % chg['bp'].mean())
