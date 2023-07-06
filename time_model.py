@@ -3,7 +3,7 @@ import numpy as np
 from scipy.ndimage import shift
 
 working_path = 'D:\\中信建投实习\\中信实习-算法交易\\tick'
-data = pd.read_feather(working_path + '/tickf.feather')  # 存放因子数据
+data = pd.read_feather(working_path + '\\tickf.feather')  # 存放因子数据
 
 
 def twap(tick: pd.DataFrame):
