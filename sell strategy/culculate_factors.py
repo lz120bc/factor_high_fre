@@ -4,7 +4,7 @@ from funs2 import *
 import threading
 
 # 市值处理
-dsm = pd.read_csv('D:\\中信建投实习\\中信实习-算法交易\\因子计算回测\\data\\TRD_Dalyr.csv')  # 市值文件
+dsm = pd.read_csv('D:\\中信建投实习\\中信实习-算法交易\\因子计算回测\\data\\TRD_Dalyr.csv',sep='\s+')  # 市值文件
 dsm.drop_duplicates(subset=['Stkcd'], inplace=True, keep='first')
 dsm['dsmv'] = np.log(dsm['Dsmvtll'] / 100000.0)
 
