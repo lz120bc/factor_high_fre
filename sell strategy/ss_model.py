@@ -1,8 +1,8 @@
 from funs2 import *
 
 if __name__ == "__main__":
-    working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
-    trade_path = '/Users/lvfreud/Desktop/中信建投/因子/data/trade'
+    working_path = 'D:\\中信建投实习\\bigdata\\tick'
+    trade_path = 'D:\\中信建投实习\\bigdata\\trade'
     trade_data = pd.read_feather(trade_path + '/trade.feather')
     data = pd.read_feather(working_path + '/tickf.feather')
     fac = ['voi_neutral_rank', 'sori_neutral_rank', 'pearson_neutral_rank',

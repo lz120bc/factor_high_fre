@@ -4,12 +4,12 @@ from funs2 import *
 import threading
 
 # 市值处理
-dsm = pd.read_csv('/Users/lvfreud/Desktop/中信建投/因子/data/TRD_Dalyr.csv')  # 市值文件
+dsm = pd.read_csv('D:\\中信建投实习\\中信实习-算法交易\\因子计算回测\\data\\TRD_Dalyr.csv')  # 市值文件
 dsm.drop_duplicates(subset=['Stkcd'], inplace=True, keep='first')
 dsm['dsmv'] = np.log(dsm['Dsmvtll'] / 100000.0)
 
 # tick数据预处理
-working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
+working_path = 'D:\\中信建投实习\\bigdata\\tick'
 fac = ['voi_neutral', 'sori_neutral', 'pearson_neutral', 'mpc_skew_neutral', 'bam_neutral', 'por_neutral']
 files_name = []
 data = []
@@ -83,4 +83,4 @@ for (date, time), group in data.groupby(['date', 'tick']):
 dar = pd.concat(dar, axis=0)
 data = pd.concat([data, dar], axis=1)
 del dar
-data.to_feather(working_path+'/tickf.feather')
+data.to_feather(working_path+'\\tickf.feather')

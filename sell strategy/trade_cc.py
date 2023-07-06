@@ -1,7 +1,7 @@
 import os
 import pandas as pd
 
-trade_path = '/Users/lvfreud/Desktop/中信建投/因子/data/trade'
+trade_path = 'D:\\中信建投实习\\bigdata\\trade'
 files_name = []
 trade_data = []
 for root, dirs, files in os.walk(trade_path):
@@ -19,4 +19,4 @@ for i in files_name:
         trd = trd.sort_values(['date', 'time', 'trade_price'])
         trade_data.append(trd)
 trade_data = pd.concat(trade_data).reset_index()
-trade_data.to_feather(trade_path + '/trade.feather')
+trade_data.to_feather(trade_path + '\\trade.feather')

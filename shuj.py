@@ -7,7 +7,7 @@ import datetime
 # data = pd.read_csv('E:\\data\\tick.csv', low_memory=False)
 # working_path = 'E:\\data\\tick'
 # dsm = pd.read_csv('E:\\data\\TRD_Dalyr.csv')
-working_path = 'D:\\中信建投实习\\中信实习-算法交易\\tick'
+working_path = 'D:\\中信建投实习\\bigdata\\tick'
 dsm = pd.read_csv('D:\\中信建投实习\\中信实习-算法交易\\因子计算回测\\data\\TRD_Dalyr.csv')  # 市值文件
 dsm.drop_duplicates(subset=['Stkcd'], inplace=True, keep='first')
 dsm['dsmv'] = np.log(dsm['Dsmvtll'] / 100000.0)
@@ -69,4 +69,4 @@ data = pd.concat([data, tick], axis=1)
 data.drop_duplicates(subset=['securityid', 'date', 'tick'], inplace=True, keep='last')
 data.reset_index(drop=True, inplace=True)
 
-data.to_feather(working_path+'/tickda.feather')
+data.to_feather(working_path+'\\tickda.feather')

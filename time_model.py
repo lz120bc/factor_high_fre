@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 from scipy.ndimage import shift
 
-working_path = 'D:\\中信建投实习\\中信实习-算法交易\\tick'
+working_path = 'D:\\中信建投实习\\bigdata\\tick'
 data = pd.read_feather(working_path + '\\tickf.feather')  # 存放因子数据
 
 
