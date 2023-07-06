@@ -11,13 +11,13 @@ if __name__ == "__main__":
     fac = fac + ['port']
     chg = []
     for (date, sec), group in data.groupby(['date', 'securityid']):
-        # print('日期：', date, '\t代码：', sec)
-        # tda = trade_data[(trade_data['date'] == date) & (trade_data['securityid'] == sec)]
+        print('日期：', date, '\t代码：', sec)
+        tda = trade_data[(trade_data['date'] == date) & (trade_data['securityid'] == sec)]
         if np.isnan(group['bid_price1']).any() or np.isnan(group['offer_price1']).any():  # 跳过涨跌停的天
             continue
         price1 = twap(group)
-        price2 = easy_test(group)
-        # price2 = dynamic_twap(group, tda, factor='port')
+        price3 = easy_test(group)
+        price2 = dynamic_factor(group, tda)
         bp = (price2 - price1) / price1 * 10000
         chg.append([sec, date, price1, price2, bp])
         # p = []

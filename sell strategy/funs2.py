@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import threading
 import statsmodels.api as sm
+from scipy.ndimage import shift
 
 # 计算函数
 lock = threading.Lock()
@@ -591,21 +592,21 @@ def vwap(tick: pd.DataFrame):
     return price
 
 
-def dynamic_twap(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.8,
-                 factor='sori_neutral_rank'):
+def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.8,
+                   factor='sori_neutral_rank'):
     bid_price1 = tick['bid_price1'].values
     ask_price1 = tick['offer_price1'].values
-    # ask_price2 = tick['offer_price2'].values
     bid_vol1 = tick['bid_volume1'].values
     time = pd.to_datetime(tick['time']/1000, format='%H%M%S').dt.time.values
     ret = (tick['price'] / tick['price'].shift(1))
     ret = ret.fillna(1).values
     factor_tick = tick[factor].values
     nums = len(tick)
-    total_volume = tick.iloc[-1]['total_volume_trade'] * 0.25
+    total_volume = tick.iloc[-1]['total_volume_trade'] * 0.2
     remain_volume = total_volume
     total_value = 0
     sr = 1
+    t2 = 40
     price_seq = np.array([])  # 挂单价格
     volume_seq = np.array([])  # 挂单量
     time_seq = np.array([])  # 挂单时间
@@ -648,14 +649,19 @@ def dynamic_twap(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta1:
                 remain_volume -= np.sum(sell_volume1)
                 total_value += sell_volume1 @ price_seq
                 # 挂单量为0或挂单时间为20tick的撤单
-                del_seq = np.where((volume_seq == 0) | (time_seq >= 20))
+            del_seq = np.where(volume_seq == 0)
+            price_seq = np.delete(price_seq, del_seq)
+            time_seq = np.delete(time_seq, del_seq)
+            volume_seq = np.delete(volume_seq, del_seq)
+            del_seq = np.where(time_seq >= t2)
+            if len(del_seq[0]) > 0:
                 price_seq = np.delete(price_seq, del_seq)
                 time_seq = np.delete(time_seq, del_seq)
                 volume_seq = np.delete(volume_seq, del_seq)
         if sr >= 1 and factor_tick[i] > beta1:  # 缓慢上涨按ask_price卖出
-            sell_volume = remain_volume / (nums - i)
+            sell_volume = remain_volume / (nums - i) * 4
             sell_volume = sell_volume // 100 * 100
-            if i < nums - 20:
+            if i < nums - t2:
                 if len(price_seq) > 0:  # 按顺序插入挂单
                     insert_index = np.searchsorted(price_seq, ask_price1[i] + 1)
                     price_seq = np.insert(price_seq, insert_index, ask_price1[i])
@@ -666,7 +672,7 @@ def dynamic_twap(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta1:
                     volume_seq = np.append(volume_seq, sell_volume)
                     time_seq = np.append(time_seq, 0)
         elif sr < 1 and factor_tick[i] > beta2:  # 快速下跌按照bid_price卖出
-            sell_volume = remain_volume / (nums - i)
+            sell_volume = remain_volume / (nums - i) * 4
             if sell_volume > bid_vol1[i]:
                 sell_volume = bid_vol1[i]
             sell_volume = sell_volume // 100 * 100
@@ -674,16 +680,17 @@ def dynamic_twap(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta1:
             total_value += sell_volume * bid_price1[i]
         if remain_volume <= 0:
             break
-    if remain_volume > 0:  # 如果存在未卖出股票，按收盘价卖出
-        total_value += remain_volume * tick['last'].iloc[-1]
-    price = total_value / total_volume
+    # if remain_volume > 0:  # 如果存在未卖出股票，按收盘价卖出
+    #     total_value += remain_volume * tick['last'].iloc[-1]
+    # price = total_value / total_volume
+    price = total_value/(total_volume-remain_volume)
     return price / 10000.0
 
 
 def easy_test(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.8, factor='sori_neutral_rank'):
     bid_price1 = tick['bid_price1'].values
-    ask_price1 = tick['offer_price2'].values
-    last_20 = ta.SMA(tick['last'], 20).shift(19).values
+    ask_price1 = tick['offer_price1'].values
+    last_20 = ta.MAX(tick['last'], 20).shift(19).values
     ret = (tick['price'] / tick['price'].shift(1))
     ret = ret.fillna(1).values
     factor_tick = tick[factor].values
@@ -705,6 +712,146 @@ def easy_test(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: flo
             total_value += sell_volume * ask_price1[i]
         elif sr < 1 and factor_tick[i] > beta2:  # 快速下跌按照bid_price卖出
             sell_volume = remain_volume / (nums - i) * 2
+            sell_volume = sell_volume // 100 * 100
+            remain_volume -= sell_volume
+            total_value += sell_volume * bid_price1[i]
+        if remain_volume <= 0:
+            break
+    if remain_volume > 0:  # 如果存在未卖出股票，按收盘价卖出
+        total_value += remain_volume * tick['last'].iloc[-1]
+    price = total_value / total_volume
+    return price / 10000.0
+
+
+def dynamic_twap(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.8, factor='sori_neutral_rank'):
+    bid_price1 = tick['bid_price1'].values
+    bid_price2 = tick['bid_price2'].values
+    bid_price3 = tick['bid_price3'].values
+    bid_price4 = tick['bid_price4'].values
+    bid_price5 = tick['bid_price5'].values
+    bid_vol1 = tick['bid_volume1'].values
+    bid_vol2 = tick['bid_volume2'].values
+    bid_vol3 = tick['bid_volume3'].values
+    bid_vol4 = tick['bid_volume4'].values
+    bid_vol5 = tick['bid_volume5'].values
+    ask_price1 = tick['offer_price1'].values
+    volume = tick['volumes'].values
+    values = tick['values'].values
+    tick_price = np.where(volume > 0, values / volume * 10000, 0)
+    vol_ask = (tick_price - shift(bid_price1, 1, cval=0)) / (
+            shift(ask_price1, 1, cval=0) - shift(bid_price1, 1, cval=0)) * volume
+    vol_ask = np.where(vol_ask < 0, 0, vol_ask)
+    vol_ask = np.where(tick_price > shift(ask_price1, 1, cval=0), volume, vol_ask)
+    vol_ask = np.where(np.isnan(vol_ask), 0, vol_ask)
+    ret = (tick['price'] / tick['price'].shift(1))
+    ret = ret.fillna(1).values
+    factor_tick = tick[factor].values
+    nums = len(tick)
+    total_volume = tick.iloc[-1]['total_volume_trade'] * 0.25
+    remain_volume = total_volume
+    total_value = 0
+    sr = 1
+    price_seq = np.array([])  # 挂单价格
+    volume_seq = np.array([])  # 挂单量
+    time_seq = np.array([])  # 挂单时间
+    for i in range(nums):
+        sr *= ret[i]  # 计算累计收益率
+        if i >= lng:
+            sr /= ret[i - lng]
+        if np.isnan(factor_tick[i]):
+            continue
+        if len(volume_seq) > 0:  # 挂单量不为0
+            time_seq += 1
+            sell_volume1 = np.where(price_seq <= ask_price1[i-1], volume_seq, 0)
+            s = 0  # 挂单成交量
+            s5 = 0
+            s4 = 0
+            s3 = 0
+            s2 = 0
+            s1 = 0
+            for k in range(len(sell_volume1)):  # 挂单序列循环
+                if sum(sell_volume1) == 0:
+                    break
+                if price_seq[k] <= bid_price5[i-1]:
+                    if s5 + sell_volume1[k] <= bid_vol5[i-1]:
+                        s5 += sell_volume1[k]
+                        volume_seq[k] = 0
+                    else:
+                        volume_seq[k] = s5 + sell_volume1[k] - bid_vol5[i-1]  # 剩余未卖出
+                        sell_volume1[k] = bid_vol5[i-1] - s5  # 卖出份额
+                        s5 += sell_volume1[k]
+                elif bid_price5[i-1] < price_seq[k] <= bid_price4[i-1]:
+                    if s4 + sell_volume1[k] <= bid_vol4[i-1]:
+                        s4 += sell_volume1[k]
+                        volume_seq[k] = 0
+                    else:
+                        volume_seq[k] = s4 + sell_volume1[k] - bid_vol4[i-1]  # 剩余未卖出
+                        sell_volume1[k] = bid_vol4[i-1] - s4  # 卖出份额
+                        s4 += sell_volume1[k]
+                elif bid_price4[i-1] < price_seq[k] <= bid_price3[i-1]:
+                    if s3 + sell_volume1[k] <= bid_vol3[i-1]:
+                        s3 += sell_volume1[k]
+                        volume_seq[k] = 0
+                    else:
+                        volume_seq[k] = s3 + sell_volume1[k] - bid_vol3[i-1]  # 剩余未卖出
+                        sell_volume1[k] = bid_vol3[i-1] - s3  # 卖出份额
+                        s3 += sell_volume1[k]
+                elif bid_price3[i-1] < price_seq[k] <= bid_price2[i-1]:
+                    if s2 + sell_volume1[k] <= bid_vol2[i-1]:
+                        s2 += sell_volume1[k]
+                        volume_seq[k] = 0
+                    else:
+                        volume_seq[k] = s2 + sell_volume1[k] - bid_vol2[i-1]  # 剩余未卖出
+                        sell_volume1[k] = bid_vol2[i-1] - s2  # 卖出份额
+                        s2 += sell_volume1[k]
+                elif bid_price2[i-1] < price_seq[k] <= bid_price1[i-1]:
+                    if s1 + sell_volume1[k] <= bid_vol1[i-1]:
+                        s1 += sell_volume1[k]
+                        volume_seq[k] = 0
+                    else:
+                        volume_seq[k] = s1 + sell_volume1[k] - bid_vol1[i-1]  # 剩余未卖出
+                        sell_volume1[k] = bid_vol1[i-1] - s1  # 卖出份额
+                        s1 += sell_volume1[k]
+                else:
+                    if s + sell_volume1[k] <= vol_ask[i]:  # vol_ask实际上估计的是上个ask_price1成交量
+                        s += sell_volume1[k]
+                        volume_seq[k] = 0
+                    else:  # 超过volume的部分放到序列的第k个中
+                        volume_seq[k] = s + sell_volume1[k] - vol_ask[i]  # 剩余未卖出
+                        sell_volume1[k] = vol_ask[i] - s  # 卖出份额
+                        s += sell_volume1[k]
+                        break
+            s = s + s1 + s2 + s3 + s4 + s5
+            if k+1 < len(sell_volume1):  # 超过k的订单未卖出，卖出份额记为0
+                for j in range(k+1, len(sell_volume1)):
+                    sell_volume1[j] = 0
+            remain_volume -= s
+            total_value += sell_volume1 @ price_seq
+            if time_seq[0] >= 20:
+                price_seq = np.delete(price_seq, 0)
+                volume_seq = np.delete(volume_seq, 0)
+                time_seq = np.delete(time_seq, 0)
+            # 挂单量未0的撤单
+            price_seq = np.delete(price_seq, np.where(volume_seq == 0))
+            time_seq = np.delete(time_seq, np.where(volume_seq == 0))
+            volume_seq = np.delete(volume_seq, np.where(volume_seq == 0))
+        if sr >= 1 and factor_tick[i] > beta1:  # 缓慢上涨按ask_price卖出
+            sell_volume = remain_volume / (nums - i) * 2
+            sell_volume = sell_volume // 100 * 100
+            if i < nums-20:  # 最后时刻不挂单，只撤单
+                if len(price_seq) > 0:
+                    insert_index = np.searchsorted(price_seq, ask_price1[i]+1)
+                    price_seq = np.insert(price_seq, insert_index, ask_price1[i])
+                    volume_seq = np.insert(volume_seq, insert_index, sell_volume)
+                    time_seq = np.insert(time_seq, insert_index, 0)
+                else:
+                    price_seq = np.append(price_seq, ask_price1[i])  # 挂单
+                    volume_seq = np.append(volume_seq, sell_volume)
+                    time_seq = np.append(time_seq, 0)
+        elif sr < 1 and factor_tick[i] > beta2:  # 快速下跌按照bid_price卖出
+            sell_volume = remain_volume / (nums - i) * 2
+            if sell_volume > bid_vol1[i]:
+                sell_volume = bid_vol1[i]
             sell_volume = sell_volume // 100 * 100
             remain_volume -= sell_volume
             total_value += sell_volume * bid_price1[i]
