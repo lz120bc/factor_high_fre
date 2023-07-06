@@ -17,7 +17,7 @@ if __name__ == "__main__":
             continue
         price1 = twap(group)
         price3 = easy_test(group)
-        price2 = dynamic_factor(group, tda)
+        price2 = dynamic_factor(group, tda, factor='port')
         bp = (price2 - price1) / price1 * 10000
         chg.append([sec, date, price1, price2, bp])
         # p = []
