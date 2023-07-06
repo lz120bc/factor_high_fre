@@ -7,3 +7,4 @@ data = data.merge(tvt, on=['securityid', 'date'], how='left')
 data['vw'] = data['volumes'] / data['volumes_day']
 vw = data.groupby(['tick'])['vw'].mean().reset_index()
 vw.to_feather(working_path+"/vwap.feather")
+# calculate
