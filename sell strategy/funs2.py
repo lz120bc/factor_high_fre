@@ -592,7 +592,7 @@ def vwap(tick: pd.DataFrame):
     return price
 
 
-def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.8,
+def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 200, beta1: float = 0.3, beta2: float = 0.8,
                    factor='sori_neutral_rank'):
     bid_price1 = tick['bid_price1'].values
     ask_price1 = tick['offer_price1'].values
@@ -614,6 +614,8 @@ def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta
     td_time = trade['time'].dt.time.values
     td_price = trade['trade_price'].values
     td_volume = trade['trade_volume'].values
+    wd = []
+    wdr = 0
     for i in range(nums):
         sr *= ret[i]  # 计算累计收益率
         if i >= lng:
@@ -654,25 +656,33 @@ def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta
             price_seq = np.delete(price_seq, del_seq)
             time_seq = np.delete(time_seq, del_seq)
             volume_seq = np.delete(volume_seq, del_seq)
-            time = min(t2, nums - t2)
-            del_seq = np.where(time_seq >= time)
+            del_seq = np.where(time_seq > t2)
             if len(del_seq[0]) > 0:
                 withdraw += volume_seq[del_seq[0]][0]
                 price_seq = np.delete(price_seq, del_seq)
                 time_seq = np.delete(time_seq, del_seq)
                 volume_seq = np.delete(volume_seq, del_seq)
+                wdr = withdraw / (total_volume - remain_volume)
+                wd.append(wdr)
         if sr >= 1 and factor_tick[i] > beta1:  # 缓慢上涨按ask_price卖出
             sell_volume = remain_volume / (nums - i) * 4
             sell_volume = sell_volume // 100 * 100
-            if len(price_seq) > 0:  # 按顺序插入挂单
-                insert_index = np.searchsorted(price_seq, ask_price1[i] + 1)
-                price_seq = np.insert(price_seq, insert_index, ask_price1[i])
-                volume_seq = np.insert(volume_seq, insert_index, sell_volume)
-                time_seq = np.insert(time_seq, insert_index, 0)
-            else:
-                price_seq = np.append(price_seq, ask_price1[i])  # 挂单
-                volume_seq = np.append(volume_seq, sell_volume)
-                time_seq = np.append(time_seq, 0)
+            if wdr > 0.1:
+                sv = min(sell_volume * wdr, bid_vol1[i])
+                sv = sv // 100 * 100
+                remain_volume -= sv
+                total_value += sv * bid_price1[i]
+                sell_volume = sell_volume - sv
+            if nums - i > t2:
+                if len(price_seq) > 0:  # 按顺序插入挂单
+                    insert_index = np.searchsorted(price_seq, ask_price1[i] + 1)
+                    price_seq = np.insert(price_seq, insert_index, ask_price1[i])
+                    volume_seq = np.insert(volume_seq, insert_index, sell_volume)
+                    time_seq = np.insert(time_seq, insert_index, 0)
+                else:
+                    price_seq = np.append(price_seq, ask_price1[i])  # 挂单
+                    volume_seq = np.append(volume_seq, sell_volume)
+                    time_seq = np.append(time_seq, 0)
         elif sr < 1 and factor_tick[i] > beta2:  # 快速下跌按照bid_price卖出
             sell_volume = min(remain_volume / (nums - i) * 4, bid_vol1[i])
             sell_volume = sell_volume // 100 * 100
@@ -684,7 +694,9 @@ def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta
     #     total_value += remain_volume * tick['last'].iloc[-1]
     # price = total_value / total_volume
     price = total_value/(total_volume-remain_volume)
-    return price / 10000.0
+    withdraw = withdraw / (total_volume-remain_volume) * 100
+    remain_volume = remain_volume / total_volume * 100
+    return price / 10000.0, withdraw, remain_volume
 
 
 def easy_test(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.8, factor='sori_neutral_rank'):
