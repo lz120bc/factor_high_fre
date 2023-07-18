@@ -13,15 +13,17 @@ if __name__ == "__main__":
     fac = fac + ['port']
     chg = []
     for (date, sec), group in data.groupby(['date', 'securityid']):
-        if np.isnan(group['bid_price1']).any() or np.isnan(group['offer_price1']).any() or date == 20230601:
+        if np.isnan(group['bid_price1']).any() or np.isnan(group['offer_price1']).any():
             continue
-        print('日期：', date, '\t代码：', sec)
-        # tda = trade_data[(trade_data['date'] == date) & (trade_data['securityid'] == sec)]
+
+        tda = trade_data[(trade_data['date'] == date) & (trade_data['securityid'] == sec)]
         price1 = twap(group)
-        price2 = easy_test2(group, factor='port')
-        # price2, withdraw, remain = dynamic_factor(group, tda)
+        # price2, remain = easy_test(group, factor='port')
+        price2, withdraw, remain = dynamic_factor(group, tda, factor='port')
         bp = (price2 - price1) / price1 * 10000
-        chg.append([sec, date, price1, price2, bp])
+        print('日期：', date, '\t代码：', sec, end="\t")
+        print("%.2fbp\t剩余：%.2f%%\t撤单：%.2f%%" % (bp, remain, withdraw))
+        chg.append([sec, date, price1, price2, bp, remain, withdraw])
         # p = []
         # for name in fac:
         #     p.append((dynamic_twap(group, factor=name) - price1) / price1 * 10000)
@@ -30,10 +32,10 @@ if __name__ == "__main__":
     # print((chg[fac] > 0).sum() / len(chg))
     # print(chg[fac].mean())
     # chg.to_csv('model1.csv', index=False)
-    chg = pd.DataFrame(chg, columns=['sec', 'date', 'twap', 'model', 'bp'])
+    chg = pd.DataFrame(chg, columns=['sec', 'date', 'twap', 'model', 'bp', 'remain', 'withdraw'])
     w = (chg['bp'] > 0).sum() / len(chg) * 100
     print("胜率：%.2f%%" % w)
     print("平均价格提高：%.2fbp" % chg['bp'].mean())
-    # print("剩余单量：%.2f%%" % chg['remain'].mean())
-    # print("撤单率：%.2f%%" % chg['withdraw'].mean())
-    chg.to_csv('model1.csv', index=False)
+    print("剩余单量：%.2f%%" % chg['remain'].mean())
+    print("撤单率：%.2f%%" % chg['withdraw'].mean())
+    # chg.to_csv('model1.csv', index=False)
