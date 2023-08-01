@@ -4,6 +4,7 @@ import pandas as pd
 import threading
 import statsmodels.api as sm
 from scipy.ndimage import shift
+import matplotlib.pyplot as plt
 
 # 计算函数
 lock = threading.Lock()
@@ -592,11 +593,12 @@ def vwap(tick: pd.DataFrame):
     return price
 
 
-def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 200, beta1: float = 0.3, beta2: float = 0.8,
+def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.6,
                    factor='sori_neutral_rank'):
     bid_price1 = tick['bid_price1'].values
     ask_price1 = tick['offer_price1'].values
     bid_vol1 = tick['bid_volume1'].values
+    last = tick['last'].values
     time = pd.to_datetime(tick['time']/1000, format='%H%M%S').dt.time.values
     ret = (tick['price'] / tick['price'].shift(1))
     ret = ret.fillna(1).values
@@ -607,6 +609,8 @@ def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 200, beta
     total_value = 0
     sr = 1
     t2 = 400
+    prs = []
+    pr = 0
     withdraw = 0
     price_seq = np.array([])  # 挂单价格
     volume_seq = np.array([])  # 挂单量
@@ -614,7 +618,6 @@ def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 200, beta
     td_time = trade['time'].dt.time.values
     td_price = trade['trade_price'].values
     td_volume = trade['trade_volume'].values
-    wd = []
     wdr = 0
     for i in range(nums):
         sr *= ret[i]  # 计算累计收益率
@@ -646,7 +649,7 @@ def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 200, beta
                     else:
                         j += 1
                         s = 0
-                while k + 1 < len(sell_volume1) and sell_volume1[k+1] > 0:
+                while k + 1 < len(sell_volume1) and sell_volume1[k + 1] > 0:
                     sell_volume1[k + 1] = 0
                     k += 1
                 remain_volume -= np.sum(sell_volume1)
@@ -662,18 +665,20 @@ def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 200, beta
                 price_seq = np.delete(price_seq, del_seq)
                 time_seq = np.delete(time_seq, del_seq)
                 volume_seq = np.delete(volume_seq, del_seq)
-                wdr = withdraw / (total_volume - remain_volume)
-                wd.append(wdr)
         if sr >= 1 and factor_tick[i] > beta1:  # 缓慢上涨按ask_price卖出
-            sell_volume = remain_volume / (nums - i) * 4
+            sell_volume = min(remain_volume / (nums - i) * 3.5 * np.exp(100*pr),
+                              max(remain_volume-np.sum(volume_seq), 0))
             sell_volume = sell_volume // 100 * 100
-            if wdr > 0.1:
+            if sell_volume == 0:
+                continue
+            if wdr > 0.4:
                 sv = min(sell_volume * wdr, bid_vol1[i])
                 sv = sv // 100 * 100
                 remain_volume -= sv
                 total_value += sv * bid_price1[i]
                 sell_volume = sell_volume - sv
             if nums - i > t2:
+                prs.append([last[i], np.nan, last[i]])
                 if len(price_seq) > 0:  # 按顺序插入挂单
                     insert_index = np.searchsorted(price_seq, ask_price1[i] + 1)
                     price_seq = np.insert(price_seq, insert_index, ask_price1[i])
@@ -684,62 +689,100 @@ def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 200, beta
                     volume_seq = np.append(volume_seq, sell_volume)
                     time_seq = np.append(time_seq, 0)
         elif sr < 1 and factor_tick[i] > beta2:  # 快速下跌按照bid_price卖出
-            sell_volume = min(remain_volume / (nums - i) * 4, bid_vol1[i])
+            sell_volume = min(remain_volume / (nums - i) * 3.5 * np.exp(100*pr),
+                              max(remain_volume-np.sum(volume_seq), 0))
             sell_volume = sell_volume // 100 * 100
+            sell_volume = min(sell_volume, bid_vol1[i])
             remain_volume -= sell_volume
             total_value += sell_volume * bid_price1[i]
+            prs.append([last[i], last[i], np.nan])
+        else:
+            prs.append([last[i], np.nan, np.nan])
+        pr = total_value / (total_volume - remain_volume) if total_volume != remain_volume else bid_price1[i]
+        pr = np.log(bid_price1[i] / pr) if pr != 0 else 0
         if remain_volume <= 0:
             break
-    # if remain_volume > 0:  # 如果存在未卖出股票，按收盘价卖出
-    #     total_value += remain_volume * tick['last'].iloc[-1]
-    # price = total_value / total_volume
-    price = total_value/(total_volume-remain_volume)
+    if remain_volume > 0:  # 如果存在未卖出股票，按收盘价卖出
+        total_value += remain_volume * tick['last'].iloc[-1]
+    price = total_value / total_volume
+    # price = total_value/(total_volume-remain_volume)
     withdraw = withdraw / (total_volume-remain_volume) * 100
     remain_volume = remain_volume / total_volume * 100
+    # pd.DataFrame(prs).plot()
+    # plt.show()
     return price / 10000.0, withdraw, remain_volume
 
 
-def easy_test(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.8, factor='sori_neutral_rank'):
+def easy_test(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.6, factor='sori_neutral_rank'):
     bid_price1 = tick['bid_price1'].values
     bid_volume1 = tick['bid_volume1'].values
-    ask_price1 = tick['offer_price1'].values
-    last_20 = ta.MAX(tick['last'], 20).shift(19).values
+    trade_price = (tick['total_value_trade'] / tick['total_volume_trade']).values
     ret = (tick['price'] / tick['price'].shift(1))
     ret = ret.fillna(1).values
     factor_tick = tick[factor].values
     nums = len(tick)
-    total_volume = tick.iloc[-1]['total_volume_trade'] * 0.20
+    total_volume = tick.iloc[-1]['total_volume_trade'] * 0.20 // 100 * 100
     remain_volume = total_volume
     total_value = 0
+    prs = []
     sr = 1
-    sell1 = 0
-    sell2 = 0
+    sr30 = 1
+    se = 0
+    for i in range(nums):
+        sr *= ret[i]  # 计算累计收益率
+        sr30 *= ret[i]
+        if i >= lng:
+            sr /= ret[i - lng]
+        if i >= 600:
+            sr30 /= ret[i - 600]
+        if np.isnan(factor_tick[i]):
+            continue
+        pr = total_value / (total_volume - remain_volume) if total_volume != remain_volume else bid_price1[i]
+        pr1 = np.log(bid_price1[i] / pr)
+        pr2 = np.log(trade_price[i] / pr)
+        if (sr < 1 and factor_tick[i] > beta2) or (sr*sr30 >= 1 and factor_tick[i] > beta1) or (pr1 > 1):
+            se += 1
+            if sr30 < 1:
+                pr1 = pr2
+            tv = max(total_volume*(i-nums)/nums+remain_volume, 0)*nums/total_volume + 1
+            sell_volume = remain_volume / (nums - i) * 3.5 * np.exp(100*pr1)*tv
+            sell_volume = sell_volume // 100 * 100
+            sell_volume = min(sell_volume, bid_volume1[i], remain_volume)
+            remain_volume -= sell_volume
+            total_value += sell_volume * bid_price1[i]
+            prs.append([bid_price1[i], bid_price1[i]])
+        else:
+            prs.append([bid_price1[i], np.nan])
+        if remain_volume <= 0:
+            break
+    se = se / nums
+    # if remain_volume > 0:  # 如果存在未卖出股票，按收盘价卖出
+    #     total_value += remain_volume * tick['last'].iloc[-1]
+    # price = total_value / total_volume
+    price = total_value / (total_volume-remain_volume)
+    pd.DataFrame(prs).plot()
+    plt.show()
+    return price / 10000.0, remain_volume / total_volume * 100
+
+
+def easy_test2(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.8, factor='sori_neutral_rank'):
+    """仅考虑成交价格"""
+    last = tick['bid_price1'].values
+    ret = (tick['price'] / tick['price'].shift(1))
+    ret = ret.fillna(1).values
+    factor_tick = tick[factor].values
+    nums = len(tick)
+    sr = 1
+    price = []
     for i in range(nums):
         sr *= ret[i]  # 计算累计收益率
         if i >= lng:
             sr /= ret[i - lng]
         if np.isnan(factor_tick[i]):
             continue
-        if sr >= 1 and factor_tick[i] > beta1 and ask_price1[i] <= last_20[i]:
-            sell_volume = remain_volume / (nums - i) * 2
-            sell_volume = sell_volume // 100 * 100
-            remain_volume -= sell_volume
-            total_value += sell_volume * bid_price1[i]
-            sell1 += 1
-        elif sr < 1 and factor_tick[i] > beta2:  # 快速下跌按照bid_price卖出
-            sell_volume = remain_volume / (nums - i) * 5
-            sell_volume = sell_volume // 100 * 100
-            sell_volume = min(sell_volume, bid_volume1[i])
-            remain_volume -= sell_volume
-            total_value += sell_volume * bid_price1[i]
-            sell2 += 1
-        if remain_volume <= 0:
-            break
-    sell1 += sell2
-    if remain_volume > 0:  # 如果存在未卖出股票，按收盘价卖出
-        total_value += remain_volume * tick['last'].iloc[-1]
-    price = total_value / total_volume
-    return price / 10000.0
+        if (sr < 1 and factor_tick[i] > beta2) or (sr >= 1 and factor_tick[i] > beta1):  # 快速下跌按照bid_price卖出
+            price.append(last[i])
+    return np.mean(price) / 10000.0
 
 
 def dynamic_twap(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.8, factor='sori_neutral_rank'):

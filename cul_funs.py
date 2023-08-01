@@ -490,7 +490,7 @@ def por(data_dic: pd.DataFrame, tick_nums) -> pd.Series:
     buy_positive = pd.Series(0, index=data_dic.index)
     op = data_dic['offer_price1']
     last = data_dic['last']
-    tvt = data_dic['total_value_trade']
+    tvt = data_dic['values']
     buy_positive[last >= op.shift(1)] = tvt[last >= op.shift(1)]
     tick_fac_data = ta.SUM(buy_positive, tick_nums) / ta.SUM(tvt, tick_nums)
     return tick_fac_data

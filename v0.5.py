@@ -6,7 +6,7 @@ import time
 # glob_f = ['pearson', 'rwr', 'voi', 'voi2', 'mofi', 'ori', 'sori', 'pir', 'rsj', 'illiq', 'lsilliq',
 #           'lambda', 'lqs', 'peaks', 'vc', 'skew', 'kurt', 'mpb', 'mpc', 'mpc_max', 'mpc_skew',
 #           'mcib', 'ptor', 'bni', 'mb', 'bam', 'ba_cov', 'por']
-glob_f = ['voi', 'sori', 'pearson', 'bam', 'mpc_skew', 'por']
+glob_f = ['bam']
 lock = threading.Lock()
 # working_path = 'E:\\data\\tick'
 working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
@@ -29,14 +29,14 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         # low5 = ta.MIN(g.low, window_size)
         # groups['rwr'] = (g.price - open5) / (high5 - low5)
 
-        total_value_trade_ms = g['total_value_trade']
-        groups['pearson'] = ta.CORREL(total_value_trade_ms, g.price, window_size)
+        # total_value_trade_ms = g['total_value_trade']
+        # groups['pearson'] = ta.CORREL(total_value_trade_ms, g.price, window_size)
 
-        groups['voi'] = voi(g)
+        # groups['voi'] = voi(g)
         # groups['voi2'] = voi2(g)
         # groups['mofi'] = mofi(g)
         # groups['ori'] = ori(g)
-        groups['sori'] = sori(g)
+        # groups['sori'] = sori(g)
         # groups['pir'] = pir(g)
         # groups['rsj'] = rsj(r_minute, window_size)
         # groups['illiq'] = illiq(g, r_minute)
@@ -52,14 +52,14 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         # groups['mpb'] = mpb(g)
         # groups['mpc'] = mpc(g)
         # groups['mpc_max'] = mpc_max(g)
-        groups['mpc_skew'] = mpc_skew(g)
+        # groups['mpc_skew'] = mpc_skew(g)
         # groups['mcib'] = mci_b(g)
         # groups['ptor'] = ptor(g, r_minute)
         # groups['bni'] = bni(g, r_minute, window_size)
         # groups['mb'] = mb(g, window_size)
         groups['bam'] = bam(g, 20)
         # groups['ba_cov'] = ba_cov(g, window_size)
-        groups['por'] = por(g, 20)
+        # groups['por'] = por(g, 20)
 
         lock.acquire()
         r_data.append(groups)
@@ -111,43 +111,43 @@ data.sort_values(['securityid', 'date', 'time'], inplace=True)
 fac = ['voi_neutral', 'sori_neutral', 'pearson_neutral', 'mpc_skew_neutral', 'bam_neutral', 'por_neutral']
 
 # 输出标准化因子值
-dar = []
-for (date, time), group in data.groupby(['date', 'tick']):
-    g = pd.DataFrame(index=group.index)
-    for factor in fac:
-        g[factor + '_rank'] = group[factor].rank(ascending=False) / len(g)
-    dar.append(g)
-dar = pd.concat(dar, axis=0)
-data = pd.concat([data, dar], axis=1)
-del dar
-data.to_feather(working_path+'/tickf.feather')
+# dar = []
+# for (date, time), group in data.groupby(['date', 'tick']):
+#     g = pd.DataFrame(index=group.index)
+#     for factor in fac:
+#         g[factor + '_rank'] = group[factor].rank(ascending=False) / len(g)
+#     dar.append(g)
+# dar = pd.concat(dar, axis=0)
+# data = pd.concat([data, dar], axis=1)
+# del dar
+# data.to_feather(working_path+'/tickf.feather')
 factors = glob_f
 factors = [i + '_neutral' for i in factors]
 
-# # 计算IC/RankIC值
-# factor_ic = []
-# ic = [i + '_ic' for i in factors]
-# rank_ic = [i + '_rank_ic' for i in factors]
-# for (da, ti), group in data.groupby(['date', 'tick']):
-#     fac = group[['r_pre']+factors].corr().iloc[0, 1:].to_list()
-#     ric = group[['r_pre']+factors].rank().corr().iloc[0, 1:].to_list()
-#     factor_ic.append([da, ti] + fac + ric)
-# data_IC = pd.DataFrame(factor_ic, columns=['date', 'tick'] + ic + rank_ic)
-# data_IC = data_IC.sort_values(['date', 'tick'])
-# print(data_IC[rank_ic].mean())
-# del factor_ic
-#
-# # 计算ICIR/RankICIR值
-# data_ir = data_IC[ic].mean() / data_IC[ic].std()
-# data_rank_ir = data_IC[rank_ic].mean() / data_IC[rank_ic].std()
-# print(data_rank_ir)
-#
-# # 分组回测
-# for kk in factors:
-#     sto = returns_stock(data, kk)
-#     print(kk)
-#     print(sto.sum() / len(data['date'].drop_duplicates()))
-#     sto.cumsum().plot().set_xticks([])
+# 计算IC/RankIC值
+factor_ic = []
+ic = [i + '_ic' for i in factors]
+rank_ic = [i + '_rank_ic' for i in factors]
+for (da, ti), group in data.groupby(['date', 'tick']):
+    fac = group[['r_pre']+factors].corr().iloc[0, 1:].to_list()
+    ric = group[['r_pre']+factors].rank().corr().iloc[0, 1:].to_list()
+    factor_ic.append([da, ti] + fac + ric)
+data_IC = pd.DataFrame(factor_ic, columns=['date', 'tick'] + ic + rank_ic)
+data_IC = data_IC.sort_values(['date', 'tick'])
+print(data_IC[rank_ic].mean())
+del factor_ic
+
+# 计算ICIR/RankICIR值
+data_ir = data_IC[ic].mean() / data_IC[ic].std()
+data_rank_ir = data_IC[rank_ic].mean() / data_IC[rank_ic].std()
+print(data_rank_ir)
+
+# 分组回测
+for kk in factors:
+    sto = returns_stock(data, kk)
+    print(kk)
+    print(sto.sum() / len(data['date'].drop_duplicates()))
+    sto.cumsum().plot().set_xticks([])
 #     plt.savefig(kk + '.png')
 #
 # end_time = time.process_time()

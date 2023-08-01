@@ -7,8 +7,8 @@ import datetime
 # data = pd.read_csv('E:\\data\\tick.csv', low_memory=False)
 # working_path = 'E:\\data\\tick'
 # dsm = pd.read_csv('E:\\data\\TRD_Dalyr.csv')
-working_path = 'D:\\中信建投实习\\bigdata\\tick'
-dsm = pd.read_csv('D:\\中信建投实习\\中信实习-算法交易\\因子计算回测\\data\\TRD_Dalyr.csv')  # 市值文件
+working_path = '/Users/lvfreud/Desktop/中信建投/因子/data/tick'
+dsm = pd.read_csv('/Users/lvfreud/Desktop/中信建投/因子/data/TRD_Dalyr.csv')  # 市值文件
 dsm.drop_duplicates(subset=['Stkcd'], inplace=True, keep='first')
 dsm['dsmv'] = np.log(dsm['Dsmvtll'] / 100000.0)
 files_name = []
@@ -26,7 +26,7 @@ for root, dirs, files in os.walk(working_path):
         path = os.path.join(root, fi)
         files_name.append(path)
 for i in files_name:
-    if "20230424_20230504" in i:
+    if "20230601_20230609" in i:
         data.append(pd.read_feather(i))
 data = pd.concat(data).reset_index(drop=True)
 data['securityid'] = data.securityid.astype('int')
@@ -69,4 +69,4 @@ data = pd.concat([data, tick], axis=1)
 data.drop_duplicates(subset=['securityid', 'date', 'tick'], inplace=True, keep='last')
 data.reset_index(drop=True, inplace=True)
 
-data.to_feather(working_path+'\\tickda.feather')
+data.to_feather(working_path+'/tickda.feather')
