@@ -17,12 +17,18 @@ if __name__ == "__main__":
 
     fac = ['voi_neutral_rank', 'sori_neutral_rank',
            'mpc_skew_neutral_rank', 'bam_neutral_rank', 'por_neutral_rank']
-    ric = [5.1, 9.2, 1.9, 2.5, 2.6]
+    ric = [5.1, 9.2, 1.9, 2.5, 2.6] #rank ic,相关性系数，反应因子的有效性，因子的rank和收益率的rank的相关性，单一因子rank_ic达到10%就已经很高了
+    #每一tick的200票全部因子的rank和其收益率进行回归
+
+    #rank_ir是rank_ic除以其标准差，反映了因子的稳定性，
     data['port'] = (data[fac] * ric).dropna().sum(axis=1) / np.sum(ric)
+    #后期才改的：多因子聚合，比因子简单加权效果要好
     chg = []
+
     for (date, sec), group in data.groupby(['date', 'securityid']):
-        if np.isnan(group['bid_price1']).any() or np.isnan(group['offer_price1']).any():
+        if np.isnan(group['bid_price1']).any() or np.isnan(group['offer_price1']).any(): #后期才有的：把存在涨停和跌停的天都剔除掉
             continue
+
         # tda = trade_data[(trade_data['date'] == date) & (trade_data['securityid'] == sec)]
         price1 = twap(group)
         price2, remain = easy_test(group, factor='port')

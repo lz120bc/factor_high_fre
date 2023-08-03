@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 # 计算函数
 lock = threading.Lock()
 
+#注：默认所有因子都没有相关性
 
 def cul_skew(returns, window_size) -> pd.Series:
     """偏度计算"""
@@ -497,6 +498,7 @@ def por(data_dic: pd.DataFrame, tick_nums) -> pd.Series:
     tick_fac_data = ta.SUM(buy_positive, tick_nums) / ta.SUM(tvt, tick_nums)
     return tick_fac_data
 
+###
 
 def returns_stock(data: pd.DataFrame, factor: str) -> pd.DataFrame:
     sto = []
@@ -519,7 +521,9 @@ def returns_stock(data: pd.DataFrame, factor: str) -> pd.DataFrame:
     sto = pd.DataFrame(sto, columns=['r_pre' + str(s) for s in range(k)]+['date', 'tick'])
     sto = sto.groupby(['date', 'tick']).mean()
     sto = sto / 20
+
     return sto
+
 
 
 def handle_task(tick: pd.DataFrame, window_size, r_data):
@@ -745,7 +749,7 @@ def easy_test(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: flo
             if sr30 < 1:
                 pr1 = pr2
             tv = max(total_volume*(i-nums)/nums+remain_volume, 0)*nums/total_volume + 1  #惩罚因子
-            sell_volume = remain_volume / (nums - i) * 3.5 * np.exp(100*pr1)*tv
+            sell_volume = remain_volume / (nums - i) * 3.5 * np.exp(100*pr1)*tv #改gamma
             sell_volume = sell_volume // 100 * 100
             sell_volume = min(sell_volume, bid_volume1[i], remain_volume)
             remain_volume -= sell_volume
