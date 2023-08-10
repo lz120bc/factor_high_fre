@@ -630,7 +630,7 @@ def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta
             td_index = np.where((td_time < time[i]) & (td_time >= time[i-1]) & (td_price >= min(price_seq)))
             if len(td_index[0]) > 0:
                 trade_price = td_price[td_index]
-                trade_volume = td_volume[td_index]
+                trade_volume = td_volume[td_index] * 0.5
                 s = 0
                 j = 0
                 k = 0
@@ -713,10 +713,10 @@ def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta
     return price / 10000.0, withdraw, remain_volume
 
 
-def easy_test(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.6, factor='sori_neutral_rank'):
+def easy_test(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.6, factor='sori_neutral_rank',
+              ratio: float = 3.0):
     bid_price1 = tick['bid_price1'].values
     bid_volume1 = tick['bid_volume1'].values
-    trade_price = (tick['total_value_trade'] / tick['total_volume_trade']).values
     ret = (tick['price'] / tick['price'].shift(1))
     ret = ret.fillna(1).values
     factor_tick = tick[factor].values
@@ -725,6 +725,7 @@ def easy_test(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: flo
     remain_volume = total_volume
     total_value = 0
     prs = []
+    tvr = []
     sr = 1
     sr30 = 1
     se = 0
@@ -733,19 +734,25 @@ def easy_test(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: flo
         sr30 *= ret[i]
         if i >= lng:
             sr /= ret[i - lng]
-        if i >= 600:
-            sr30 /= ret[i - 600]
         if np.isnan(factor_tick[i]):
             continue
         pr = total_value / (total_volume - remain_volume) if total_volume != remain_volume else bid_price1[i]
         pr1 = np.log(bid_price1[i] / pr)
-        pr2 = np.log(trade_price[i] / pr)
-        if (sr < 1 and factor_tick[i] > beta2) or (sr*sr30 >= 1 and factor_tick[i] > beta1) or (pr1 > 1):
+        if (sr < 1 and factor_tick[i] > beta2) or (sr >= 1 and factor_tick[i] > beta1) or pr1 > 0:
             se += 1
-            if sr30 < 1:
-                pr1 = pr2
-            tv = max(total_volume*(i-nums)/nums+remain_volume, 0)*nums/total_volume + 1
-            sell_volume = remain_volume / (nums - i) * 3.5 * np.exp(100*pr1)*tv
+            tv = total_volume * i / nums / (total_volume - remain_volume) if total_volume != remain_volume else 1
+            tv = 1 if tv < 1 else tv
+            tv = 2.5 if tv > 2.5 else tv
+            tvr.append(tv)
+            if 1.1 > tv > 1:
+                cf = tv**2
+            elif 1.2 > tv >= 1.1:
+                cf = tv**3
+            elif 1.3 > tv >= 1.2:
+                cf = tv**4
+            else:
+                cf = tv**5
+            sell_volume = remain_volume / (nums - i) * 3 * np.exp(100*pr1) * cf
             sell_volume = sell_volume // 100 * 100
             sell_volume = min(sell_volume, bid_volume1[i], remain_volume)
             remain_volume -= sell_volume
@@ -755,14 +762,18 @@ def easy_test(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: flo
             prs.append([bid_price1[i], np.nan])
         if remain_volume <= 0:
             break
-    se = se / nums
+        if i == 2400:
+            if nums / se < 3:
+                beta2 += 0.1
+                beta1 += 0.1
+    rat = nums / se
     # if remain_volume > 0:  # 如果存在未卖出股票，按收盘价卖出
     #     total_value += remain_volume * tick['last'].iloc[-1]
     # price = total_value / total_volume
     price = total_value / (total_volume-remain_volume)
-    pd.DataFrame(prs).plot()
-    plt.show()
-    return price / 10000.0, remain_volume / total_volume * 100
+    # pd.DataFrame(tvr).plot()
+    # plt.show()
+    return price / 10000.0, remain_volume / total_volume * 100, rat
 
 
 def easy_test2(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.8, factor='sori_neutral_rank'):
