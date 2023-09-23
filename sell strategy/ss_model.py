@@ -7,7 +7,6 @@ if __name__ == "__main__":
     # trade_path = '/Users/lvfreud/Desktop/中信建投/因子/data/trade'
     # trade_data = pd.read_feather(os.path.join(trade_path, 'trade.feather'))
     data = pd.read_feather(os.path.join(working_path, 'tickf.feather'))
-    rat = pd.read_csv('model1.csv')
     chg = []
     for (date, sec), group in data.groupby(['date', 'securityid']):
         if np.isnan(group['bid_price1']).any() or np.isnan(group['offer_price1']).any():

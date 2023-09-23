@@ -4,6 +4,8 @@ import pandas as pd
 import threading
 import statsmodels.api as sm
 from scipy.ndimage import shift
+import datetime
+import os
 import matplotlib.pyplot as plt
 
 # 计算函数
@@ -522,7 +524,7 @@ def returns_stock(data: pd.DataFrame, factor: str) -> pd.DataFrame:
     return sto
 
 
-def handle_task(tick: pd.DataFrame, window_size, r_data):
+def handle_task(tick: pd.DataFrame, window_size, r_data, factors):
     """多线程函数"""
     for _, g in tick.groupby('securityid'):
         price_mean5 = ta.MA(g.price, window_size)  # 5分钟均价
@@ -533,22 +535,30 @@ def handle_task(tick: pd.DataFrame, window_size, r_data):
         groups = pd.concat([r_minute, r_5, r_mean5, r_pre], axis=1)
         groups.columns = ['r_minute', 'r_5', 'r_mean5', 'r_pre']
 
-        total_value_trade_ms = g['total_value_trade']
-        groups['pearson'] = ta.CORREL(total_value_trade_ms, g.price, window_size)
-        groups['voi'] = voi(g)
-        groups['sori'] = sori(g)
-        groups['mpc_skew'] = mpc_skew(g)
-        groups['bam'] = bam(g, 20)
-        groups['por'] = por(g, 20)
+        for i in factors:
+            if i == 'pearson':
+                total_value_trade_ms = g['total_value_trade']
+                groups[i] = ta.CORREL(total_value_trade_ms, g.price, window_size)
+            elif i == 'voi':
+                groups[i] = voi(g)
+            elif i == 'sori':
+                groups[i] = sori(g)
+            elif i == 'mpc_skew':
+                groups[i] = mpc_skew(g)
+            elif i == 'bam':
+                groups[i] = bam(g, 20)
+            elif i == 'por':
+                groups[i] = por(g, 20)
 
         lock.acquire()
         r_data.append(groups)
         lock.release()
 
 
-def tick_handle(tick: pd.DataFrame, window_size):
+def tick_handle(tick: pd.DataFrame, window_size, glob_f=None):
     # 多线程计算，cores为线程数，一般为设置为cpu核心数，x86架构下可以提升运算速度
-    glob_f = ['voi', 'sori', 'pearson', 'bam', 'mpc_skew', 'por']
+    if glob_f is None:
+        glob_f = ['voi', 'sori', 'pearson', 'bam', 'mpc_skew', 'por']
     tick_threads = []
     r_data = []
     cores = 1
@@ -568,7 +578,7 @@ def tick_handle(tick: pd.DataFrame, window_size):
             g = tick.loc[sis.index[sti]:]
         else:
             g = tick.loc[sis.index[sti]:sis.index[edi]].drop(sis.index[edi])
-        tick_thread = threading.Thread(target=handle_task, args=(g, window_size, r_data))
+        tick_thread = threading.Thread(target=handle_task, args=(g, window_size, r_data, glob_f))
         tick_thread.start()
         tick_threads.append(tick_thread)
         sti = edi
@@ -591,6 +601,12 @@ def twap(tick: pd.DataFrame):
 def vwap(tick: pd.DataFrame):
     price = tick.iloc[-1]['total_value_trade'] / tick.iloc[-1]['total_volume_trade']
     return price
+
+
+def custom_function(ratio, t):
+    base_value = 1 + (ratio - 1) * (1 - np.exp(-t / 1000))
+    final_value = base_value + (10 - base_value) * (1 - np.exp(1-ratio))
+    return final_value
 
 
 def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: float = 0.6,
@@ -666,7 +682,11 @@ def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta
                 time_seq = np.delete(time_seq, del_seq)
                 volume_seq = np.delete(volume_seq, del_seq)
         if sr >= 1 and factor_tick[i] > beta1:  # 缓慢上涨按ask_price卖出
-            sell_volume = min(remain_volume / (nums - i) * 3.5 * np.exp(100*pr),
+            tv = total_volume * i / nums / (total_volume - remain_volume) if total_volume != remain_volume else 1
+            tv = 1 if tv < 1 else tv
+            tv = 2.5 if tv > 2.5 else tv
+            cf = custom_function(tv, i)
+            sell_volume = min(remain_volume / (nums - i) * 3.5 * np.exp(100*pr) * cf,
                               max(remain_volume-np.sum(volume_seq), 0))
             sell_volume = sell_volume // 100 * 100
             if sell_volume == 0:
@@ -689,7 +709,11 @@ def dynamic_factor(tick: pd.DataFrame, trade: pd.DataFrame, lng: int = 150, beta
                     volume_seq = np.append(volume_seq, sell_volume)
                     time_seq = np.append(time_seq, 0)
         elif sr < 1 and factor_tick[i] > beta2:  # 快速下跌按照bid_price卖出
-            sell_volume = min(remain_volume / (nums - i) * 3.5 * np.exp(100*pr),
+            tv = total_volume * i / nums / (total_volume - remain_volume) if total_volume != remain_volume else 1
+            tv = 1 if tv < 1 else tv
+            tv = 2.5 if tv > 2.5 else tv
+            cf = custom_function(tv, i)
+            sell_volume = min(remain_volume / (nums - i) * 3.5 * np.exp(100*pr) * cf,
                               max(remain_volume-np.sum(volume_seq), 0))
             sell_volume = sell_volume // 100 * 100
             sell_volume = min(sell_volume, bid_vol1[i])
@@ -744,14 +768,7 @@ def easy_test(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: flo
             tv = 1 if tv < 1 else tv
             tv = 2.5 if tv > 2.5 else tv
             tvr.append(tv)
-            if 1.1 > tv > 1:
-                cf = tv**2
-            elif 1.2 > tv >= 1.1:
-                cf = tv**3
-            elif 1.3 > tv >= 1.2:
-                cf = tv**4
-            else:
-                cf = tv**5
+            cf = custom_function(tv, i)
             sell_volume = remain_volume / (nums - i) * 3 * np.exp(100*pr1) * cf
             sell_volume = sell_volume // 100 * 100
             sell_volume = min(sell_volume, bid_volume1[i], remain_volume)
@@ -934,3 +951,107 @@ def dynamic_twap(tick: pd.DataFrame, lng: int = 150, beta1: float = 0.3, beta2: 
         total_value += remain_volume * tick['last'].iloc[-1]
     price = total_value / total_volume
     return price / 10000.0
+
+
+# trade数据预处理
+def trade_data_handle(trade_path, date):
+    files_name = []
+    ptors = []
+    for root, dirs, files in os.walk(trade_path):
+        for fi in files:
+            path = os.path.join(root, fi)
+            files_name.append(path)
+    for i in files_name:
+        if date in i:
+            trd = pd.read_feather(i)
+            trd = trd[trd['trade_bs_flag'] != 'C']
+            trade_value = trd['trade_volume'] * trd['trade_price']
+            trade_value.name = 'trade_value'
+            tick_time = pd.to_datetime(trd['time'] / 1000, format="%H%M%S")
+            tick_time.name = 'tick'
+            sec = tick_time.dt.second
+            sec = sec % 3
+            tick_time.loc[sec == 1] = tick_time[sec == 1] + datetime.timedelta(seconds=2)
+            tick_time.loc[sec == 2] = tick_time[sec == 2] + datetime.timedelta(seconds=1)
+            tick_time = tick_time.dt.time
+            trd = pd.concat([tick_time, trd, trade_value], axis=1)
+
+            # 计算ptor因子
+            amt = trd.groupby(['securityid', 'date', 'tick'])['trade_value'].mean()
+            amt_out = trd[trd['trade_bs_flag'] == 'S'].groupby(['date', 'tick'])['trade_value'].mean()
+            ptor_factor = amt_out / amt
+            ptor_factor.name = 'ptor'
+            ptor_factor = ptor_factor.fillna(0)
+            ptors.append(ptor_factor)
+    ptors = pd.concat(ptors, axis=0).reset_index()
+    ptors.to_feather(trade_path+'/ptor.feather')
+    return ptors
+
+
+# tick数据预处理
+def tick_data_handle(working_path, date_calculate):
+    # 市值处理
+    dsm = pd.read_csv('/Users/lvfreud/Desktop/csc️/因子/data/TRD_Dalyr.csv')  # 市值文件
+    dsm.drop_duplicates(subset=['Stkcd'], inplace=True, keep='first')
+    dsm['dsmv'] = np.log(dsm['Dsmvtll'] / 100000.0)
+
+    files_name = []
+    data_sum = []
+    bao = []
+    for i in range(1, 6):
+        bao.append('offer_price' + str(i))
+        bao.append('offer_volume' + str(i))
+        bao.append('bid_price' + str(i))
+        bao.append('bid_volume' + str(i))
+    col = ['securityid', 'date', 'time', 'high', 'low', 'last', 'total_value_trade',
+           'total_volume_trade', 'num_trades', 'dsmv'] + bao
+    for root, dirs, files in os.walk(working_path):
+        for fi in files:
+            path = os.path.join(root, fi)
+            files_name.append(path)
+    for i in files_name:
+        if date_calculate in i:
+            tick_data = pd.read_feather(i)
+            tick_data['Stkcd'] = tick_data.securityid.astype('int')
+            tick_data = tick_data.merge(dsm, on='Stkcd', how='left')
+            group_index = ['securityid', 'date', 'time']
+            tick_data.drop(tick_data[tick_data['eq_trading_phase_code'] != 'T'].index, inplace=True)
+            tick_data.drop(tick_data.columns[~tick_data.columns.isin(col)], axis=1, inplace=True)
+            tick_data.loc[tick_data['offer_price1'] == 0, 'offer_price1'] = np.nan
+            tick_data.loc[tick_data['bid_price1'] == 0, 'bid_price1'] = np.nan
+            tick_data['price'] = (tick_data['offer_price1'] + tick_data['bid_price1']) / 2
+            tick_data.loc[tick_data['price'].isna(), 'price'] = tick_data['last']
+            tick_data['minutes'] = (tick_data['time'] / 100000).astype('int')
+            tick_data.drop(tick_data[tick_data['minutes'] < 930].index, inplace=True)
+            tick_data.drop(tick_data[tick_data['minutes'] > 1457].index, inplace=True)
+            tick_data['const'] = 1
+            tick_data.sort_values(group_index, inplace=True)
+            vol = []
+            val = []
+            for date, g in tick_data.groupby('date'):
+                volumes = g['total_volume_trade'] - g['total_volume_trade'].shift(1)
+                values = g['total_value_trade'] - g['total_value_trade'].shift(1)
+                volumes.iloc[0] = g.iloc[0]['total_volume_trade']
+                values.iloc[0] = g.iloc[0]['total_value_trade']
+                vol.append(volumes)
+                val.append(values)
+            vol = pd.concat(vol, axis=0)
+            val = pd.concat(val, axis=0)
+            vol.name = 'volumes'
+            val.name = 'values'
+            tick_data = pd.concat([tick_data, vol, val], axis=1)
+            tick_time = pd.to_datetime(tick_data['time'] / 1000, format="%H%M%S")
+            tick_time.name = 'tick'
+            sec = tick_time.dt.second
+            sec = sec % 3
+            tick_time.loc[sec == 1] = tick_time[sec == 1] + datetime.timedelta(seconds=2)
+            tick_time.loc[sec == 2] = tick_time[sec == 2] + datetime.timedelta(seconds=1)
+            tick_time = tick_time.dt.time
+            tick_data = pd.concat([tick_data, tick_time], axis=1)
+            tick_data.drop_duplicates(subset=['securityid', 'date', 'tick'], inplace=True, keep='last')
+            tick_data.reset_index(drop=True, inplace=True)
+            data_sum.append(tick_data)
+    tick_data = pd.concat(data_sum).reset_index(drop=True)
+    del data_sum
+    tick_data.to_feather(working_path+'/tickf.feather')
+    return tick_data
